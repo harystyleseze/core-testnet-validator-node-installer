@@ -121,25 +121,25 @@ style_dialog
 show_welcome_screen() {
     show_header "Core Testnet Node Installer"
     dialog --colors \
-           --title "$(echo -e "${PRIMARY}${BOLD}Welcome${NC}")" \
-           --msgbox "\n${PRIMARY}${BOLD}Welcome to the Core Testnet Node Installer!${NC}\n\nThis tool will help you set up a Core testnet validator node on your system.\n\nBefore proceeding, we'll check if your system meets the minimum requirements.\n\nPress OK to continue." 12 70 || return 1
+           --title "Welcome" \
+           --msgbox "\nWelcome to the Core Testnet Node Installer!\n\nThis tool will help you set up a Core testnet validator node on your system.\n\nBefore proceeding, we'll check if your system meets the minimum requirements.\n\nPress OK to continue." 12 70 || return 1
 }
 
 verify_requirements() {
     dialog --colors \
-           --title "$(echo -e "${PRIMARY}${BOLD}Hardware Requirements Check${NC}")" \
-           --yesno "\n${BOLD}Before proceeding with the installation, we need to verify your system meets the minimum requirements:${NC}\n\n${PRIMARY}▸ CPU:${NC} 4 cores\n${PRIMARY}▸ RAM:${NC} 8 GB\n${PRIMARY}▸ Storage:${NC} 1 TB free space\n${PRIMARY}▸ Internet:${NC} 10 Mbps\n\nWould you like to check your system requirements now?" 15 70
+           --title "Hardware Requirements Check" \
+           --yesno "\nBefore proceeding with the installation, we need to verify your system meets the minimum requirements:\n\n▸ CPU: 4 cores\n▸ RAM: 8 GB\n▸ Storage: 1 TB free space\n▸ Internet: 10 Mbps\n\nWould you like to check your system requirements now?" 15 70
 
     if [ $? -eq 0 ]; then
         if check_hardware_requirements; then
             dialog --colors \
-                   --title "$(echo -e "${GREEN}${BOLD}Success${NC}")" \
-                   --yesno "\n${GREEN}${BOLD}✓ Your system meets all the requirements!${NC}\n\nWould you like to proceed with the installation?" 10 60
+                   --title "Success" \
+                   --yesno "\n✓ Your system meets all the requirements!\n\nWould you like to proceed with the installation?" 10 60
             return $?
         else
             dialog --colors \
-                   --title "$(echo -e "${RED}${BOLD}Error${NC}")" \
-                   --msgbox "\n${RED}${BOLD}✗ Your system does not meet the minimum requirements.${NC}\n\nPlease upgrade your hardware and try again." 10 60
+                   --title "Error" \
+                   --msgbox "\n✗ Your system does not meet the minimum requirements.\n\nPlease upgrade your hardware and try again." 10 60
             return 1
         fi
     else
@@ -152,14 +152,14 @@ show_main_menu() {
 
     while true; do
         choice=$(dialog --colors \
-                       --title "$(echo -e "${PRIMARY}${BOLD}Core Node Installer - Main Menu${NC}")" \
+                       --title "Core Node Installer - Main Menu" \
                        --menu "\nChoose an option:" 15 70 6 \
-                       1 "${PRIMARY}▸${NC} Check Hardware Requirements" \
-                       2 "${PRIMARY}▸${NC} Install Core Node" \
-                       3 "${PRIMARY}▸${NC} Log Monitoring Dashboard" \
-                       4 "${PRIMARY}▸${NC} Start/Stop Node" \
-                       5 "${PRIMARY}▸${NC} View Installation Log" \
-                       6 "${PRIMARY}▸${NC} Exit" \
+                       1 "▸ Check Hardware Requirements" \
+                       2 "▸ Install Core Node" \
+                       3 "▸ Log Monitoring Dashboard" \
+                       4 "▸ Start/Stop Node" \
+                       5 "▸ View Installation Log" \
+                       6 "▸ Exit" \
                        2>&1 >/dev/tty) || return 1
 
         case $choice in
@@ -189,7 +189,7 @@ show_main_menu() {
             5)
                 if [ -f "core_installer.log" ]; then
                     dialog --colors \
-                           --title "$(echo -e "${PRIMARY}${BOLD}Installation Log${NC}")" \
+                           --title "Installation Log" \
                            --textbox "core_installer.log" 20 70 || true
                 else
                     show_error "No installation log found."

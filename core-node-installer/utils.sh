@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # Color Scheme
-# Primary Color (Yellow)
-PRIMARY='\033[38;2;255;223;0m'     # #FFDF00
+# Primary Color (Dark Blue for contrast with orange background)
+PRIMARY='\033[38;2;25;25;112m'       # Midnight Blue
 # Complementary Colors
-BLUE='\033[38;2;70;130;180m'      # Steel Blue
-GREEN='\033[38;2;34;139;34m'      # Forest Green
-RED='\033[38;2;220;20;60m'        # Crimson
-YELLOW="$PRIMARY"                  # Same as primary
-WHITE='\033[37m'                   # White
-GRAY='\033[38;2;105;105;105m'     # Dim Gray
+BLUE='\033[38;2;0;71;171m'          # Deep Blue
+GREEN='\033[38;2;0;100;0m'          # Dark Green
+RED='\033[38;2;139;0;0m'            # Dark Red
+YELLOW='\033[38;2;184;134;11m'      # Dark Golden Rod
+WHITE='\033[38;2;248;248;255m'      # Ghost White
+GRAY='\033[38;2;47;79;79m'          # Dark Slate Gray
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
@@ -101,13 +101,19 @@ check_status() {
     fi
 }
 
-# Function to get system information
+# Function to get system information for macOS
 get_system_info() {
     show_progress "Gathering system information..."
-    CPU_CORES=$(nproc)
-    TOTAL_RAM=$(free -g | awk '/^Mem:/{print $2}')
-    FREE_DISK=$(df -h / | awk 'NR==2 {print $4}' | sed 's/[A-Za-z]//g')
-    INTERNET_SPEED=$(speedtest-cli --simple 2>/dev/null | awk '/Download:/{print $2}')
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        CPU_CORES=$(sysctl -n hw.ncpu)
+        TOTAL_RAM=$(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) # Convert to GB
+        FREE_DISK=$(df -h / | awk 'NR==2 {print $4}' | sed 's/[A-Za-z]//g')
+    else
+        CPU_CORES=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo "Unknown")
+        TOTAL_RAM=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}' || echo "Unknown")
+        FREE_DISK=$(df -h / | awk 'NR==2 {print $4}' | sed 's/[A-Za-z]//g')
+    fi
+    INTERNET_SPEED=$(speedtest-cli --simple 2>/dev/null | awk '/Download:/{print $2}' || echo "Unknown")
 }
 
 # Function to create a backup of a file
@@ -169,35 +175,35 @@ style_dialog() {
 # Dialog color scheme
 use_shadow = ON
 use_colors = ON
-screen_color = (YELLOW,BLACK,ON)
-dialog_color = (BLACK,YELLOW,OFF)
-title_color = (BLACK,YELLOW,ON)
-border_color = (BLACK,YELLOW,ON)
+screen_color = (BLUE,YELLOW,ON)
+dialog_color = (BLUE,YELLOW,OFF)
+title_color = (BLUE,YELLOW,ON)
+border_color = (BLUE,YELLOW,ON)
 shadow_color = (BLACK,BLACK,ON)
-button_active_color = (YELLOW,BLACK,ON)
-button_inactive_color = (BLACK,YELLOW,OFF)
-button_key_active_color = (YELLOW,BLACK,ON)
+button_active_color = (YELLOW,BLUE,ON)
+button_inactive_color = (BLUE,YELLOW,OFF)
+button_key_active_color = (YELLOW,BLUE,ON)
 button_key_inactive_color = (RED,YELLOW,OFF)
-button_label_active_color = (YELLOW,BLACK,ON)
-button_label_inactive_color = (BLACK,YELLOW,ON)
-inputbox_color = (BLACK,YELLOW,OFF)
-inputbox_border_color = (BLACK,YELLOW,ON)
-searchbox_color = (BLACK,YELLOW,OFF)
-searchbox_title_color = (BLACK,YELLOW,ON)
-searchbox_border_color = (BLACK,YELLOW,ON)
-position_indicator_color = (BLACK,YELLOW,ON)
-menubox_color = (BLACK,YELLOW,OFF)
-menubox_border_color = (BLACK,YELLOW,ON)
-item_color = (BLACK,YELLOW,OFF)
-item_selected_color = (YELLOW,BLACK,ON)
-tag_color = (BLACK,YELLOW,ON)
-tag_selected_color = (YELLOW,BLACK,ON)
-tag_key_color = (BLACK,YELLOW,OFF)
-tag_key_selected_color = (YELLOW,BLACK,ON)
-check_color = (BLACK,YELLOW,OFF)
-check_selected_color = (YELLOW,BLACK,ON)
-uarrow_color = (BLACK,YELLOW,ON)
-darrow_color = (BLACK,YELLOW,ON)
+button_label_active_color = (YELLOW,BLUE,ON)
+button_label_inactive_color = (BLUE,YELLOW,ON)
+inputbox_color = (BLUE,YELLOW,OFF)
+inputbox_border_color = (BLUE,YELLOW,ON)
+searchbox_color = (BLUE,YELLOW,OFF)
+searchbox_title_color = (BLUE,YELLOW,ON)
+searchbox_border_color = (BLUE,YELLOW,ON)
+position_indicator_color = (BLUE,YELLOW,ON)
+menubox_color = (BLUE,YELLOW,OFF)
+menubox_border_color = (BLUE,YELLOW,ON)
+item_color = (BLUE,YELLOW,OFF)
+item_selected_color = (YELLOW,BLUE,ON)
+tag_color = (BLUE,YELLOW,ON)
+tag_selected_color = (YELLOW,BLUE,ON)
+tag_key_color = (BLUE,YELLOW,OFF)
+tag_key_selected_color = (YELLOW,BLUE,ON)
+check_color = (BLUE,YELLOW,OFF)
+check_selected_color = (YELLOW,BLUE,ON)
+uarrow_color = (BLUE,YELLOW,ON)
+darrow_color = (BLUE,YELLOW,ON)
 EOF
 }
 
