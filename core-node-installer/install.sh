@@ -98,18 +98,19 @@ install_dialog() {
 
 # Check if running in correct directory
 if [[ ! -f "$(dirname "$0")/utils.sh" ]]; then
-    show_error "Required files not found.\nPlease run this script from the core-node-installer directory."
+    echo "Error: Required files not found. Please run this script from the core-node-installer directory."
     exit 1
 fi
 
-# Check and install dialog if needed
-if ! command_exists dialog; then
-    install_dialog
-fi
-
-# Source utils and other scripts
+# Source utils first to get access to functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/utils.sh" || { show_error "Error loading utils.sh"; exit 1; }
+source "$SCRIPT_DIR/utils.sh" || { echo "Error loading utils.sh"; exit 1; }
+
+# Install required dependencies
+echo "Checking and installing required dependencies..."
+install_dependencies
+
+# Source other scripts
 source "$SCRIPT_DIR/hardware_check.sh" || { show_error "Error loading hardware_check.sh"; exit 1; }
 source "$SCRIPT_DIR/node_setup.sh" || { show_error "Error loading node_setup.sh"; exit 1; }
 source "$SCRIPT_DIR/log_monitor.sh" || { show_error "Error loading log_monitor.sh"; exit 1; }

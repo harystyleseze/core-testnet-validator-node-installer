@@ -1,18 +1,18 @@
 #!/bin/bash
 
 # Color Scheme
-# Primary Color (Orange)
-PRIMARY='\033[38;2;248;149;2m'     # #F89502
+# Primary Color (Yellow)
+PRIMARY='\033[38;2;255;223;0m'     # #FFDF00
 # Complementary Colors
-BLUE='\033[38;2;2;97;248m'        # #0261F8 - Contrast with orange
-GREEN='\033[38;2;0;200;83m'       # #00C853 - Success color
-RED='\033[38;2;255;55;55m'        # #FF3737 - Error color
-YELLOW='\033[38;2;255;193;7m'     # #FFC107 - Warning color
-WHITE='\033[37m'                  # White for normal text
-GRAY='\033[38;2;158;158;158m'    # #9E9E9E - Secondary text
-BOLD='\033[1m'                    # Bold text
-DIM='\033[2m'                     # Dimmed text
-NC='\033[0m'                      # No Color - Reset
+BLUE='\033[38;2;70;130;180m'      # Steel Blue
+GREEN='\033[38;2;34;139;34m'      # Forest Green
+RED='\033[38;2;220;20;60m'        # Crimson
+YELLOW="$PRIMARY"                  # Same as primary
+WHITE='\033[37m'                   # White
+GRAY='\033[38;2;105;105;105m'     # Dim Gray
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m'
 
 # Function to create fancy headers
 show_header() {
@@ -167,34 +167,68 @@ style_dialog() {
     export DIALOGRC="$SCRIPT_DIR/.dialogrc"
     cat > "$DIALOGRC" << 'EOF'
 # Dialog color scheme
-screen_color = (WHITE,BLACK,ON)
-dialog_color = (BLACK,WHITE,OFF)
-title_color = (BLACK,WHITE,ON)
-border_color = (WHITE,WHITE,ON)
-shadow_color = (WHITE,BLACK,ON)
-button_active_color = (WHITE,BLACK,ON)
-button_inactive_color = (BLACK,WHITE,OFF)
-button_key_active_color = (WHITE,BLACK,ON)
-button_key_inactive_color = (RED,WHITE,OFF)
+use_shadow = ON
+use_colors = ON
+screen_color = (YELLOW,BLACK,ON)
+dialog_color = (BLACK,YELLOW,OFF)
+title_color = (BLACK,YELLOW,ON)
+border_color = (BLACK,YELLOW,ON)
+shadow_color = (BLACK,BLACK,ON)
+button_active_color = (YELLOW,BLACK,ON)
+button_inactive_color = (BLACK,YELLOW,OFF)
+button_key_active_color = (YELLOW,BLACK,ON)
+button_key_inactive_color = (RED,YELLOW,OFF)
 button_label_active_color = (YELLOW,BLACK,ON)
-button_label_inactive_color = (BLACK,WHITE,ON)
-inputbox_color = (BLACK,WHITE,OFF)
-inputbox_border_color = (WHITE,WHITE,ON)
-searchbox_color = (BLACK,WHITE,OFF)
-searchbox_title_color = (YELLOW,BLACK,ON)
-searchbox_border_color = (WHITE,WHITE,ON)
-position_indicator_color = (YELLOW,WHITE,ON)
-menubox_color = (BLACK,WHITE,OFF)
-menubox_border_color = (WHITE,WHITE,ON)
-item_color = (BLACK,WHITE,OFF)
-item_selected_color = (WHITE,BLACK,ON)
-tag_color = (YELLOW,BLACK,ON)
+button_label_inactive_color = (BLACK,YELLOW,ON)
+inputbox_color = (BLACK,YELLOW,OFF)
+inputbox_border_color = (BLACK,YELLOW,ON)
+searchbox_color = (BLACK,YELLOW,OFF)
+searchbox_title_color = (BLACK,YELLOW,ON)
+searchbox_border_color = (BLACK,YELLOW,ON)
+position_indicator_color = (BLACK,YELLOW,ON)
+menubox_color = (BLACK,YELLOW,OFF)
+menubox_border_color = (BLACK,YELLOW,ON)
+item_color = (BLACK,YELLOW,OFF)
+item_selected_color = (YELLOW,BLACK,ON)
+tag_color = (BLACK,YELLOW,ON)
 tag_selected_color = (YELLOW,BLACK,ON)
-tag_key_color = (YELLOW,BLACK,OFF)
-tag_key_selected_color = (WHITE,BLACK,ON)
-check_color = (BLACK,WHITE,OFF)
-check_selected_color = (WHITE,BLACK,ON)
-uarrow_color = (YELLOW,BLACK,ON)
-darrow_color = (YELLOW,BLACK,ON)
+tag_key_color = (BLACK,YELLOW,OFF)
+tag_key_selected_color = (YELLOW,BLACK,ON)
+check_color = (BLACK,YELLOW,OFF)
+check_selected_color = (YELLOW,BLACK,ON)
+uarrow_color = (BLACK,YELLOW,ON)
+darrow_color = (BLACK,YELLOW,ON)
 EOF
+}
+
+# Function to install required dependencies
+install_dependencies() {
+    local os_type=$(detect_os)
+    local deps=("dialog" "curl" "wget" "speedtest-cli" "lz4")
+    
+    case $os_type in
+        "macos")
+            if ! command -v brew &>/dev/null; then
+                echo "Installing Homebrew..."
+                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            fi
+            for dep in "${deps[@]}"; do
+                if ! command -v "$dep" &>/dev/null; then
+                    echo "Installing $dep..."
+                    brew install "$dep"
+                fi
+            done
+            ;;
+        "debian")
+            sudo apt-get update
+            sudo apt-get install -y "${deps[@]}"
+            ;;
+        "redhat")
+            sudo yum install -y epel-release
+            sudo yum install -y "${deps[@]}"
+            ;;
+        "arch")
+            sudo pacman -Sy --noconfirm "${deps[@]}"
+            ;;
+    esac
 }
