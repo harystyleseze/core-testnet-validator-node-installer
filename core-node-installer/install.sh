@@ -149,16 +149,29 @@ verify_requirements() {
 
 show_main_menu() {
     local requirements_met=false
+    local node_installed=false
+
+    # Function to check if node is installed
+    check_node_installation() {
+        if [ -f "$INSTALL_DIR/start-node.sh" ] && [ -d "$INSTALL_DIR/core-chain" ]; then
+            node_installed=true
+            return 0
+        fi
+        return 1
+    }
 
     while true; do
+        check_node_installation
+
         choice=$(dialog --colors \
-                       --title "Core Node Installer - Main Menu" \
+                       --title " Core Node Installer - Main Menu " \
+                       --backtitle "Core Node Installer" \
                        --menu "\nChoose an option:" 15 70 6 \
                        1 "▸ Check Hardware Requirements" \
                        2 "▸ Install Core Node" \
-                       3 "▸ Log Monitoring Dashboard" \
-                       4 "▸ Start/Stop Node" \
-                       5 "▸ View Installation Log" \
+                       3 "$([ "$node_installed" = true ] && echo "▸ Log Monitoring Dashboard" || echo "✗ Log Monitoring (Node not installed)")" \
+                       4 "$([ "$node_installed" = true ] && echo "▸ Start/Stop Node" || echo "✗ Start/Stop Node (Node not installed)")" \
+                       5 "$([ "$node_installed" = true ] && echo "▸ View Installation Log" || echo "✗ View Installation Log (Node not installed)")" \
                        6 "▸ Exit" \
                        2>&1 >/dev/tty) || return 1
 
@@ -172,27 +185,49 @@ show_main_menu() {
             2)
                 if [ "$requirements_met" = true ] || verify_requirements; then
                     setup_node || true
+                    check_node_installation
                 else
                     show_error "Please verify hardware requirements before installation."
                 fi
                 ;;
             3)
-                show_log_monitor_menu || true
+                if [ "$node_installed" = true ]; then
+                    show_log_monitor_menu || true
+                else
+                    dialog --colors \
+                           --title " Action Required " \
+                           --backtitle "Core Node Installer" \
+                           --msgbox "\n  ⚠️  Core Node not installed\n\n  Please install the Core Node first\n  before accessing the log monitor.\n\n  Select 'Install Core Node' from\n  the main menu to proceed." \
+                           12 45
+                fi
                 ;;
             4)
-                if [ "$requirements_met" = true ] || [ -f "$INSTALL_DIR/start-node.sh" ]; then
+                if [ "$node_installed" = true ]; then
                     manage_node || true
                 else
-                    show_error "Please install the node first."
+                    dialog --colors \
+                           --title " Action Required " \
+                           --backtitle "Core Node Installer" \
+                           --msgbox "\n  ⚠️  Core Node not installed\n\n  Please install the Core Node first\n  before managing node operations.\n\n  Select 'Install Core Node' from\n  the main menu to proceed." \
+                           12 45
                 fi
                 ;;
             5)
-                if [ -f "core_installer.log" ]; then
-                    dialog --colors \
-                           --title "Installation Log" \
-                           --textbox "core_installer.log" 20 70 || true
+                if [ "$node_installed" = true ]; then
+                    if [ -f "core_installer.log" ]; then
+                        dialog --colors \
+                               --title " Installation Log " \
+                               --backtitle "Core Node Installer" \
+                               --textbox "core_installer.log" 20 70 || true
+                    else
+                        show_error "No installation log found."
+                    fi
                 else
-                    show_error "No installation log found."
+                    dialog --colors \
+                           --title " Action Required " \
+                           --backtitle "Core Node Installer" \
+                           --msgbox "\n  ⚠️  Core Node not installed\n\n  Please install the Core Node first\n  before viewing the installation log.\n\n  Select 'Install Core Node' from\n  the main menu to proceed." \
+                           12 45
                 fi
                 ;;
             6)

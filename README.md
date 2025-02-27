@@ -1,5 +1,7 @@
 # Core Node Installer: TUI for Testnet Validator Setup
 
+![Core Node Installer](./asset/homepage.png)
+
 This project provides a Terminal User Interface (TUI) to guide users through the process of setting up a Core testnet validator node. The installer simplifies the entire setup process, including hardware checks, dependencies installation, node setup, and management.
 
 ## Features
@@ -138,6 +140,8 @@ After installation, you can manage your node by selecting the **Start/Stop Node*
 The installer includes beautiful dialog-based menus and progress bars to guide users through the setup. Here's a preview:
 
 - **Main Menu:**
+
+  ![Main Menu](./asset/mainMenu.png)
 
   ```
   Welcome to Core Node Installer
