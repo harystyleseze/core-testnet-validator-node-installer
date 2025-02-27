@@ -25,10 +25,86 @@ handle_error() {
     exit "$exit_code"
 }
 
+# Function to detect OS and package manager
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [ -f /etc/debian_version ]; then
+        echo "debian"
+    elif [ -f /etc/redhat-release ]; then
+        echo "redhat"
+    elif [ -f /etc/arch-release ]; then
+        echo "arch"
+    else
+        echo "unknown"
+    fi
+}
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to install dialog
+install_dialog() {
+    local os_type=$(detect_os)
+    local install_cmd=""
+    local package_name="dialog"
+    
+    echo "Dialog is not installed. Would you like to install it? (y/n)"
+    read -r response
+    
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        case $os_type in
+            "macos")
+                if ! command_exists brew; then
+                    echo "Homebrew is not installed. Would you like to install it? (y/n)"
+                    read -r brew_response
+                    if [[ "$brew_response" =~ ^[Yy]$ ]]; then
+                        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                    else
+                        echo "Cannot proceed without Homebrew on macOS."
+                        exit 1
+                    fi
+                fi
+                install_cmd="brew install"
+                ;;
+            "debian")
+                install_cmd="sudo apt-get update && sudo apt-get install -y"
+                ;;
+            "redhat")
+                install_cmd="sudo yum install -y"
+                ;;
+            "arch")
+                install_cmd="sudo pacman -S --noconfirm"
+                ;;
+            *)
+                echo "Unsupported operating system. Please install dialog manually."
+                exit 1
+                ;;
+        esac
+
+        echo "Installing dialog..."
+        if ! eval "$install_cmd $package_name"; then
+            echo "Failed to install dialog. Please install it manually."
+            exit 1
+        fi
+        echo "Dialog installed successfully!"
+    else
+        echo "Cannot proceed without dialog. Please install it manually."
+        exit 1
+    fi
+}
+
 # Check if running in correct directory
 if [[ ! -f "$(dirname "$0")/utils.sh" ]]; then
     echo "Error: Required files not found. Please run this script from the core-node-installer directory."
     exit 1
+fi
+
+# Check and install dialog if needed
+if ! command_exists dialog; then
+    install_dialog
 fi
 
 # Source utils and other scripts
@@ -174,12 +250,6 @@ manage_node() {
         esac
     done
 }
-
-# Check if dialog is installed before starting
-if ! check_dialog; then
-    echo "Error: Failed to install or find dialog. Please install it manually."
-    exit 1
-fi
 
 # Main execution
 if show_welcome_screen; then

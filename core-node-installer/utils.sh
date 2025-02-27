@@ -6,23 +6,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Check if dialog is installed
-check_dialog() {
-    if ! command -v dialog &> /dev/null; then
-        echo -e "${YELLOW}Dialog not found. Installing dialog...${NC}"
-        if [ -f /etc/debian_version ]; then
-            sudo apt-get update && sudo apt-get install -y dialog
-        elif [ -f /etc/redhat-release ]; then
-            sudo yum install -y dialog
-        elif [ -f /etc/arch-release ]; then
-            sudo pacman -S --noconfirm dialog
-        else
-            echo -e "${RED}Could not install dialog. Please install it manually.${NC}"
-            exit 1
-        fi
-    fi
-}
-
 # Display error message
 show_error() {
     dialog --title "Error" --msgbox "$1" 8 50
