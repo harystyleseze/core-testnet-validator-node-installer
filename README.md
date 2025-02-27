@@ -1,7 +1,6 @@
 # Core Node Installer: TUI for Testnet Validator Setup
 
-![Core Node Installer](./asset/homepage.png)
-
+![Homepage](./asset/homepage.png)
 This project provides a Terminal User Interface (TUI) to guide users through the process of setting up a Core testnet validator node. The installer simplifies the entire setup process, including hardware checks, dependencies installation, node setup, and management.
 
 ## Features
@@ -13,6 +12,7 @@ This project provides a Terminal User Interface (TUI) to guide users through the
 - **Node management**: Allows starting and stopping the validator node through the TUI.
 - **Progress indicators and status messages**: Real-time feedback during installation and node management.
 - **Log Monitoring Dashboard**: A comprehensive log monitoring system for real-time log viewing, error tracking, and log management.
+- **Admin Dashboard**: A new feature that provides powerful maintenance and management tools for the validator node.
 
 ## Main Components
 
@@ -21,6 +21,7 @@ This project provides a Terminal User Interface (TUI) to guide users through the
 - `hardware_check.sh`: Verifies that the system meets the hardware requirements for running a Core validator node.
 - `node_setup.sh`: Contains the logic for installing and setting up the node.
 - `log_monitor.sh`: The module for monitoring and managing logs, including the live log viewing dashboard and log statistics.
+- `admin_dashboard.sh`: The new module that provides administrative maintenance and management features for your validator node.
 
 ## Installation Process
 
@@ -90,6 +91,61 @@ This log monitoring dashboard provides much more sophisticated monitoring compar
 - **Tracking installation progress** through log messages.
 - **Maintaining log history** for long-term monitoring and analysis.
 
+## Admin Dashboard
+
+![Admin Dashboard](./asset/adminMenu.png)
+
+The **Admin Dashboard** is a powerful new feature designed for advanced node management and maintenance. It provides several tools to ensure your node is running smoothly and allows you to perform essential administrative tasks.
+
+### Features
+
+- **Clean Build Core Chain**:
+
+  - Cleans all build artifacts and rebuilds `geth` from scratch.
+  - Displays real-time progress and confirms success or failure.
+  - Ensures a fresh build of the Core chain environment.
+
+- **Delete Core Chain**:
+
+  - Completely removes the `core-chain` directory.
+  - Requires user confirmation before proceeding.
+  - Useful for starting fresh or reconfiguring the node.
+
+- **Reset Node Configuration**:
+
+  - Resets `config.toml` to default settings.
+  - Creates a backup of the existing configuration for future restoration.
+  - Ideal for fixing configuration issues or restoring default settings.
+
+- **Repair Installation**:
+
+  - **Verify Files**: Checks the integrity of the Git repository.
+  - **Fix Permissions**: Corrects file permissions to ensure smooth operation.
+  - **Reinstall Dependencies**: Reinstalls all required packages to ensure dependencies are up to date.
+  - Shows progress for each operation, helping ensure everything is fixed correctly.
+
+- **View System Status**:
+  - Displays key system information including:
+    - Core chain version
+    - Geth version
+    - Go version
+    - Node status (Running/Stopped)
+    - Installation directory
+    - Free disk space
+    - Recent log entries
+
+### How to Use the Admin Dashboard
+
+1. **From the main menu**, select "Admin Dashboard".
+2. **Choose between**:
+   - **Clean Build Core Chain**: Start a fresh rebuild of `geth` and clean the Core chain.
+   - **Delete Core Chain**: Remove the `core-chain` directory completely (with confirmation).
+   - **Reset Node Configuration**: Reset the node configuration to default settings.
+   - **Repair Installation**: Run file verification, fix permissions, or reinstall dependencies.
+   - **View System Status**: View current system status, including versions, disk space, and node health.
+
+The Admin Dashboard ensures that node maintenance is easy and safe, with confirmation dialogs for destructive operations and real-time progress tracking. It helps administrators maintain a healthy node environment by providing powerful tools to clean, reset, and repair the node configuration and setup.
+
 ## Usage
 
 ### Prerequisites
@@ -103,8 +159,8 @@ This log monitoring dashboard provides much more sophisticated monitoring compar
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/harystyleseze/core-testnet-validator-node-installer.git
-   cd core-testnet-validator-node-installer/core-node-installer
+   git clone https://github.com/yourusername/core-node-installer.git
+   cd core-node-installer
    ```
 
 2. Run the installer:
@@ -119,6 +175,7 @@ This log monitoring dashboard provides much more sophisticated monitoring compar
    - **View Installation Log**: View the logs from the installation process.
    - **Start/Stop Node**: Start or stop the validator node.
    - **Log Monitoring Dashboard**: Access the live log viewing dashboard.
+   - **Admin Dashboard**: Access the new Admin Dashboard for advanced node management and maintenance.
    - **Exit**: Exit the installer.
 
 ### Installation Flow
@@ -152,7 +209,8 @@ The installer includes beautiful dialog-based menus and progress bars to guide u
   3) View Installation Log
   4) Start/Stop Node
   5) Log Monitoring Dashboard
-  6) Exit
+  6) Admin Dashboard
+  7) Exit
   ```
 
 - **Log Monitoring Dashboard:**
@@ -169,6 +227,20 @@ The installer includes beautiful dialog-based menus and progress bars to guide u
   6) Back
   ```
 
+- **Admin Dashboard:**
+
+  ```
+  Admin Dashboard
+
+  Please select an option:
+  1) Clean Build Core Chain
+  2) Delete Core Chain
+  3) Reset Node Configuration
+  4) Repair Installation
+  5) View System Status
+  6) Back
+  ```
+
 - **Installation Progress:**
   ```
   Installing dependencies...
@@ -181,7 +253,7 @@ If you'd like to contribute to this project, feel free to fork the repository an
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License
 
 ---
 
