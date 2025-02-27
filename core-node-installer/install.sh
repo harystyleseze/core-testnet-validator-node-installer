@@ -128,7 +128,7 @@ show_welcome_screen() {
 verify_requirements() {
     dialog --colors \
            --title "Hardware Requirements Check" \
-           --yesno "\nBefore proceeding with the installation, we need to verify your system meets the minimum requirements:\n\n▸ CPU: 4 cores\n▸ RAM: 8 GB\n▸ Storage: 1 TB free space\n▸ Internet: 10 Mbps\n\nWould you like to check your system requirements now?" 15 70
+           --yesno "\nBefore proceeding with the installation, we need to verify your system meets the minimum requirements:\n\n▸ CPU: 4 cores\n▸ RAM: 8 GB\n▸ Storage: 1 GB free space\n▸ Internet: 10 Mbps\n\nWould you like to check your system requirements now?" 15 70
 
     if [ $? -eq 0 ]; then
         if check_hardware_requirements; then
