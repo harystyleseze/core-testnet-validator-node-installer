@@ -35,13 +35,15 @@ The installation process involves several key steps to set up the validator node
 
 3. **Repository cloning**: Clones the necessary repository for the Core node.
 
-4. **Geth building**: Builds Geth (Go Ethereum) for the node. 5. **Node directory setup**: Creates the necessary directories for the node.
+4. **Geth building**: Builds Geth (Go Ethereum) for the node.
 
-5. **Blockchain snapshot download**: Downloads the blockchain snapshot to speed up synchronization.
+5. **Node directory setup**: Creates the necessary directories for the node.
 
-6. **Genesis block initialization**: Initializes the genesis block to begin the node's setup.
+6. **Blockchain snapshot download**: Downloads the blockchain snapshot to speed up synchronization.
 
-7. **Startup script creation**: Generates scripts to easily start and manage the node.
+7. **Genesis block initialization**: Initializes the genesis block to begin the node's setup.
+
+8. **Startup script creation**: Generates scripts to easily start and manage the node.
 
 ## Log Monitoring Dashboard
 
