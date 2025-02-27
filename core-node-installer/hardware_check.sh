@@ -6,7 +6,7 @@ source ./utils.sh
 # Required specifications
 REQUIRED_CPU_CORES=4
 REQUIRED_RAM_GB=8
-REQUIRED_DISK_GB=1024  # 1 TB
+REQUIRED_DISK_GB=1.024  # 1 TB
 REQUIRED_INTERNET_SPEED=10  # 10 Mbps
 
 check_hardware_requirements() {
