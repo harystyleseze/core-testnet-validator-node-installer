@@ -4,6 +4,7 @@
 source ./utils.sh
 source ./hardware_check.sh
 source ./node_setup.sh
+source ./log_monitor.sh
 
 show_welcome_screen() {
     dialog --title "Core Testnet Node Installer" \
@@ -13,12 +14,13 @@ show_welcome_screen() {
 show_main_menu() {
     while true; do
         choice=$(dialog --title "Core Node Installer - Main Menu" \
-                       --menu "Choose an option:" 15 60 5 \
+                       --menu "Choose an option:" 15 60 6 \
                        1 "Check Hardware Requirements" \
                        2 "Install Core Node" \
-                       3 "View Installation Log" \
+                       3 "Log Monitoring Dashboard" \
                        4 "Start/Stop Node" \
-                       5 "Exit" \
+                       5 "View Installation Log" \
+                       6 "Exit" \
                        2>&1 >/dev/tty)
 
         case $choice in
@@ -34,16 +36,19 @@ show_main_menu() {
                 fi
                 ;;
             3)
+                show_log_monitor_menu
+                ;;
+            4)
+                manage_node
+                ;;
+            5)
                 if [ -f "core_installer.log" ]; then
                     dialog --title "Installation Log" --textbox "core_installer.log" 20 70
                 else
                     dialog --title "Error" --msgbox "No installation log found." 8 40
                 fi
                 ;;
-            4)
-                manage_node
-                ;;
-            5)
+            6)
                 clear
                 echo "Thank you for using Core Node Installer!"
                 exit 0

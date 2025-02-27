@@ -1,166 +1,184 @@
-# **Core Testnet Node Setup Guide (Ubuntu/Linux)**
+# Core Node Installer: TUI for Testnet Validator Setup
 
-This guide will help you set up a Core Testnet node using an Ubuntu/Linux operating system. It includes all the necessary steps, from installing dependencies to launching the node.
+This project provides a Terminal User Interface (TUI) to guide users through the process of setting up a Core testnet validator node. The installer simplifies the entire setup process, including hardware checks, dependencies installation, node setup, and management.
 
-## **Prerequisites**
+## Features
 
-Before you begin, ensure your system meets the following requirements:
+- **Beautiful dialog-based user interface**: The installer provides an intuitive TUI with a menu system for easy navigation.
+- **Hardware requirements verification**: Automatically checks your system's hardware to ensure it meets the requirements for running a validator node.
+- **Step-by-step installation process**: Walks users through each step, from system requirements to node setup.
+- **Installation logging**: Keeps logs of the installation process for troubleshooting.
+- **Node management**: Allows starting and stopping the validator node through the TUI.
+- **Progress indicators and status messages**: Real-time feedback during installation and node management.
+- **Log Monitoring Dashboard**: A comprehensive log monitoring system for real-time log viewing, error tracking, and log management.
 
-- **Ubuntu 22.04 LTS or later** (with terminal access).
-- Basic understanding of **Linux terminal commands**.
-- Ensure your system meets the **hardware and system requirements**. [Check eligibility here](https://docs.coredao.org/docs/Node/config/validator-node-config).
+## Main Components
 
-## **System Requirements**
+- `install.sh`: The entry point of the installation process, which presents a dialog-based menu to the user.
+- `utils.sh`: Contains utility functions used throughout the setup process.
+- `hardware_check.sh`: Verifies that the system meets the hardware requirements for running a Core validator node.
+- `node_setup.sh`: Contains the logic for installing and setting up the node.
+- `log_monitor.sh`: The module for monitoring and managing logs, including the live log viewing dashboard and log statistics.
 
-- **Storage**: 1 TB SSD (Solid State Drive), gp3, 8k IOPS, 250MB/s throughput, read latency <1ms.
-- **CPU**: 4 CPU cores.
-- **RAM**: 8 GB.
-- **Internet Speed**: Broadband connection with upload/download speeds of at least 10 Mbps.
+## Installation Process
 
-## **Step-by-Step Guide**
+The installation process involves several key steps to set up the validator node:
 
-### **Step 1: Update Your System**
+1. **System requirements check**: Ensures that your system has the required hardware and software.
+2. **Dependencies installation**: Installs necessary dependencies and libraries.
+3. **Repository cloning**: Clones the necessary repository for the Core node.
+4. **Geth building**: Builds Geth (Go Ethereum) for the node.
+5. **Node directory setup**: Creates the necessary directories for the node.
+6. **Blockchain snapshot download**: Downloads the blockchain snapshot to speed up synchronization.
+7. **Genesis block initialization**: Initializes the genesis block to begin the node's setup.
+8. **Startup script creation**: Generates scripts to easily start and manage the node.
 
-Start by ensuring your system is up-to-date.
+## Log Monitoring Dashboard
 
-1. Open a terminal.
-2. Run the following commands to update your package list and upgrade installed packages:
+A powerful log monitoring dashboard has been added to help users track node health, troubleshoot issues, and maintain logs. The dashboard is designed for real-time monitoring and enhanced log management.
 
-   ```bash
-   sudo apt update
-   sudo apt upgrade -y
-   ```
+### Features
 
-### **Step 2: Install Required Dependencies**
+- **Live Log Viewing**:
+  - Real-time log updates every 2 seconds.
+  - Color-coded output (red for errors/warnings, green for info/success).
+  - Scrollable window showing the last 20 log lines.
+- **Log Statistics**:
 
-Install the necessary dependencies to build the Core node software.
+  - Displays total number of log lines.
+  - Provides count of errors, warnings, and info messages.
+  - Shows the last error message.
+  - Recent activity summary of node operation.
 
-1. Run the following command to install Git, GCC, Go, and other required tools:
+- **Search Functionality**:
 
-   ```bash
-   sudo apt install -y git gcc make curl lz4 golang unzip
-   ```
+  - Search through logs with case-insensitive matching.
+  - Display search results in a scrollable window.
+  - "No results found" message when no matches are found.
 
-2. Verify the installation of `gcc` and `go`:
+- **Log Management**:
 
-   ```bash
-   gcc --version
-   go version
-   ```
+  - Export logs to a timestamped file for backup or analysis.
+  - Clear logs with automatic backup for historical record.
+  - View both Core node logs and installation logs.
 
-You should see version details for both GCC and Go.
+- **User Interface**:
+  - Clean and intuitive menu system for easy navigation between different log views.
+  - Error handling for missing log files to ensure smooth usage.
 
-### **Step 3: Clone the Core Repository**
+### How to Use the Log Monitoring Dashboard
 
-1. Clone the `core-chain` repository from GitHub:
+1. **From the main menu**, select "Log Monitoring Dashboard".
+2. **Choose between**:
+   - **Core Node Logs**: View logs from the running node.
+   - **Installation Logs**: View the installer’s activity log.
 
-   ```bash
-   git clone https://github.com/coredao-org/core-chain
-   ```
+In the log dashboard, you can:
 
-2. Navigate into the cloned directory:
+- **View live logs** with automatic updates every 2 seconds.
+- **Check log statistics** to get error counts and activity summaries.
+- **Search through logs** for specific terms or messages.
+- **Export logs** for analysis or backup (timestamped files).
+- **Clear logs** (with automatic backup) to free up space while maintaining history.
 
-   ```bash
-   cd core-chain
-   ```
+This log monitoring dashboard provides much more sophisticated monitoring compared to traditional methods (like `tail -f`). It's especially useful for:
 
-### **Step 4: Install Dependencies for Building Core**
+- **Monitoring node health** in real time.
+- **Troubleshooting node issues** by quickly identifying errors or warnings.
+- **Tracking installation progress** through log messages.
+- **Maintaining log history** for long-term monitoring and analysis.
 
-1. Run the following command to install the dependencies for building the `geth` binary:
+## Usage
 
-   ```bash
-   make geth
-   ```
+### Prerequisites
 
-2. The build process will output details similar to:
+- A Linux-based OS (Ubuntu is recommended).
+- Terminal with bash support.
+- Sufficient system resources as per the hardware requirements.
 
-   ```bash
-   >>> /usr/lib/go-1.22/bin/go build -ldflags "-X github.com/ethereum/go-ethereum/internal/version.gitCommit=afb8bd3ffe652e90a59af26db119bd988a03dd8f ..." -o /home/harystyles/core-chain/build/bin/geth ./cmd/geth
-   Done building.
-   ```
+### Steps to Use
 
-### **Step 5: Download and Extract the Blockchain Snapshot**
-
-Syncing from the genesis block can be time-consuming. It is recommended to use a snapshot of the blockchain for faster syncing.
-
-1. Download the latest Testnet snapshot from [Core Snapshots GitHub](https://github.com/coredao-org/core-snapshots):
-
-   ```bash
-   wget https://snap.coredao.org/coredao-snapshot-testnet-20240327-pruned.tar.lz4
-   ```
-
-2. Create a directory for your node data:
-
-   ```bash
-   mkdir -p ./node
-   ```
-
-3. Decompress and extract the snapshot into the `./node` directory:
-
-   ```bash
-   lz4 -d coredao-snapshot-testnet-20240327-pruned.tar.lz4 coredao-snapshot-testnet-20240327-pruned.tar
-   tar -xvf coredao-snapshot-testnet-20240327-pruned.tar -C ./node
-   ```
-
-### **Step 6: Initialize the Genesis Block**
-
-The `genesis.json` file sets the initial state of the blockchain for your node.
-
-1. Download and extract the `testnet2.zip` release from GitHub:
+1. Clone the repository:
 
    ```bash
-   wget https://github.com/coredao-org/core-chain/releases/download/v1.0.14/testnet2.zip
-   unzip testnet2.zip
+   git clone https://github.com/harystyleseze/core-testnet-validator-node-installer.git
+   cd core-testnet-validator-node-installer/core-node-installer
    ```
 
-2. Initialize the genesis block with the following command:
+2. Run the installer:
 
    ```bash
-   ./build/bin/geth --datadir ./node init ./testnet2/genesis.json
+   ./install.sh
    ```
 
-Ensure that the path to `genesis.json` is correct (`./testnet2/genesis.json`).
+3. The installer will present the following options:
+   - **Check Hardware Requirements**: Verify that your system meets the minimum hardware requirements.
+   - **Install Core Node**: Proceed with the full installation of the Core testnet validator node.
+   - **View Installation Log**: View the logs from the installation process.
+   - **Start/Stop Node**: Start or stop the validator node.
+   - **Log Monitoring Dashboard**: Access the live log viewing dashboard.
+   - **Exit**: Exit the installer.
 
-### **Step 7: Start Your Node**
+### Installation Flow
 
-You can start the node in two ways:
+The installer will guide you through the following steps:
 
-#### **Option 1: Start the Full Node with Options**
+1. **Welcome Screen**: A friendly introduction to the installation process.
+2. **Main Menu**: From here, you can choose between the available options.
+3. **Step-by-Step Installation**: If you select to install the node, the installer will run a series of checks, install dependencies, and configure the node.
+4. **Progress Feedback**: You'll receive real-time status updates and progress indicators as the installation progresses.
+5. **Completion**: Once the installation is complete, you'll have the option to start your node immediately.
 
-Run the following command to start your node:
+### Starting and Stopping the Node
 
-```bash
-./build/bin/geth --datadir ./node --cache 8000 --rpc.allow-unprotected-txs --networkid 1114
-```
+After installation, you can manage your node by selecting the **Start/Stop Node** option from the main menu. This will allow you to control the Core testnet validator node without manually entering commands.
 
-This command sets:
+## Example Screenshots
 
-- `--datadir ./node`: Location of blockchain data.
-- `--cache 8000`: Allocates 8 GB of RAM for performance.
-- `--rpc.allow-unprotected-txs`: Allows unprotected transactions (needed for validator actions).
-- `--networkid 1114`: Specifies the Testnet network ID.
+The installer includes beautiful dialog-based menus and progress bars to guide users through the setup. Here's a preview:
 
-#### **Option 2: Start the Node with the Configuration File**
+- **Main Menu:**
 
-Alternatively, you can use a configuration file to help your node connect to peers:
+  ```
+  Welcome to Core Node Installer
 
-```bash
-./build/bin/geth --config ./testnet2/config.toml --datadir ./node --cache 8000 --rpc.allow-unprotected-txs --networkid 1114
-```
+  Please select an option:
+  1) Check Hardware Requirements
+  2) Install Core Node
+  3) View Installation Log
+  4) Start/Stop Node
+  5) Log Monitoring Dashboard
+  6) Exit
+  ```
 
-### **Step 8: Monitor Logs and Performance**
+- **Log Monitoring Dashboard:**
 
-Once your node is running, you can monitor the logs to ensure everything is working properly.
+  ```
+  Log Monitoring Dashboard
 
-1. To view the logs in real-time, use the following command:
+  Please select a log view:
+  1) Core Node Logs
+  2) Installation Logs
+  3) Search Logs
+  4) Export Logs
+  5) Clear Logs
+  6) Back
+  ```
 
-   ```bash
-   tail -f ./node/logs/core.log
-   ```
+- **Installation Progress:**
+  ```
+  Installing dependencies...
+  [#####---------] 50% done
+  ```
+
+## Contributing
+
+If you'd like to contribute to this project, feel free to fork the repository and submit a pull request. Issues and feature requests can be submitted through GitHub's issue tracker.
+
+## License
+
+This project is licensed under the MIT License.
 
 ---
 
-## **Additional Resources**
-
-- [Core Testnet GitHub Repository](https://github.com/coredao-org/core-chain)
-- [Core Snapshots GitHub Repository](https://github.com/coredao-org/core-snapshots)
+Thank you for using Core Node Installer. We hope this tool simplifies your testnet validator setup experience!
