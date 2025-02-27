@@ -169,13 +169,14 @@ show_main_menu() {
         choice=$(dialog --colors \
                        --title " Core Node Installer - Main Menu " \
                        --backtitle "Core Node Installer" \
-                       --menu "\nChoose an option:" 15 70 6 \
+                       --menu "\nChoose an option:" 15 70 7 \
                        1 "▸ Check Hardware Requirements" \
                        2 "▸ Install Core Node" \
                        3 "$([ "$node_installed" = true ] && echo "▸ Log Monitoring Dashboard" || echo "✗ Log Monitoring (Node not installed)")" \
                        4 "$([ "$node_installed" = true ] && echo "▸ Start/Stop Node" || echo "✗ Start/Stop Node (Node not installed)")" \
                        5 "$([ "$node_installed" = true ] && echo "▸ View Installation Log" || echo "✗ View Installation Log (Node not installed)")" \
-                       6 "▸ Exit" \
+                       6 "▸ Admin Dashboard" \
+                       7 "▸ Exit" \
                        2>&1 >/dev/tty) || return 1
 
         case $choice in
@@ -245,6 +246,9 @@ show_main_menu() {
                 fi
                 ;;
             6)
+                show_admin_dashboard || true
+                ;;
+            7)
                 clear
                 show_header "Thank you for using Core Node Installer!"
                 exit 0
@@ -300,6 +304,132 @@ manage_node() {
                 fi
                 ;;
             3)
+                return 0
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    done
+}
+
+# Function to show admin dashboard
+show_admin_dashboard() {
+    while true; do
+        choice=$(dialog --colors \
+                       --title " Admin Dashboard " \
+                       --backtitle "Core Node Installer" \
+                       --menu "\nAdmin Operations:" 15 70 6 \
+                       1 "Clean Build Core Chain" \
+                       2 "Delete Core Chain" \
+                       3 "Reset Node Configuration" \
+                       4 "Repair Installation" \
+                       5 "View System Status" \
+                       6 "Back to Main Menu" \
+                       2>&1 >/dev/tty) || return 1
+
+        case $choice in
+            1)
+                dialog --colors \
+                       --title " Confirm Clean Build " \
+                       --yesno "\n⚠️  Warning: This will clean and rebuild the core-chain.\nAll existing build artifacts will be removed.\n\nAre you sure you want to proceed?" 10 60
+                if [ $? -eq 0 ]; then
+                    (
+                        cd "$CORE_CHAIN_DIR" && \
+                        make clean && \
+                        build_geth
+                    ) 2>&1 | dialog --programbox "Cleaning and Rebuilding..." 20 70
+                    if [ $? -eq 0 ]; then
+                        show_success "Core chain cleaned and rebuilt successfully!"
+                    else
+                        show_error "Failed to clean and rebuild core chain."
+                    fi
+                fi
+                ;;
+            2)
+                dialog --colors \
+                       --title " Confirm Delete " \
+                       --yesno "\n⚠️  Warning: This will completely remove the core-chain directory.\nAll data will be lost.\n\nAre you sure you want to proceed?" 10 60
+                if [ $? -eq 0 ]; then
+                    if rm -rf "$CORE_CHAIN_DIR"; then
+                        show_success "Core chain directory deleted successfully!"
+                    else
+                        show_error "Failed to delete core chain directory."
+                    fi
+                fi
+                ;;
+            3)
+                dialog --colors \
+                       --title " Confirm Reset " \
+                       --yesno "\n⚠️  Warning: This will reset all node configurations to default.\nCustom settings will be lost.\n\nAre you sure you want to proceed?" 10 60
+                if [ $? -eq 0 ]; then
+                    if [ -f "$NODE_DIR/config.toml" ]; then
+                        mv "$NODE_DIR/config.toml" "$NODE_DIR/config.toml.backup"
+                    fi
+                    cp "$CORE_CHAIN_DIR/testnet2/config.toml" "$NODE_DIR/config.toml"
+                    show_success "Node configuration reset to default!"
+                fi
+                ;;
+            4)
+                dialog --colors \
+                       --title " Repair Installation " \
+                       --menu "\nChoose repair option:" 15 60 4 \
+                       1 "Verify Files" \
+                       2 "Fix Permissions" \
+                       3 "Reinstall Dependencies" \
+                       4 "Back" \
+                       2>&1 >/dev/tty || continue
+
+                case $? in
+                    1)
+                        (
+                            cd "$CORE_CHAIN_DIR" && \
+                            git fsck && \
+                            git reset --hard HEAD && \
+                            make clean
+                        ) 2>&1 | dialog --programbox "Verifying files..." 20 70
+                        show_success "File verification complete!"
+                        ;;
+                    2)
+                        (
+                            chmod -R u+rw "$INSTALL_DIR" && \
+                            chmod +x "$INSTALL_DIR/start-node.sh" && \
+                            chmod +x "$CORE_CHAIN_DIR/build/bin/geth"
+                        ) 2>&1 | dialog --programbox "Fixing permissions..." 20 70
+                        show_success "Permissions fixed!"
+                        ;;
+                    3)
+                        install_dependencies
+                        ;;
+                esac
+                ;;
+            5)
+                # Create temporary file for system status
+                local temp_file=$(mktemp)
+                
+                # Gather system information
+                {
+                    echo "System Status Report"
+                    echo "===================="
+                    echo
+                    echo "Core Chain Version: $(cd "$CORE_CHAIN_DIR" && git describe --tags 2>/dev/null || echo 'N/A')"
+                    echo "Geth Version: $("$CORE_CHAIN_DIR/build/bin/geth" version 2>/dev/null || echo 'N/A')"
+                    echo "Go Version: $(go version 2>/dev/null || echo 'N/A')"
+                    echo
+                    echo "Node Status: $(pgrep -f "geth.*--networkid 1114" > /dev/null && echo 'Running' || echo 'Stopped')"
+                    echo "Installation Directory: $INSTALL_DIR"
+                    echo "Free Disk Space: $(df -h "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
+                    echo
+                    echo "Last Log Entry:"
+                    tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs found"
+                } > "$temp_file"
+
+                dialog --title "System Status" \
+                       --textbox "$temp_file" 20 70
+
+                rm -f "$temp_file"
+                ;;
+            6)
                 return 0
                 ;;
             *)

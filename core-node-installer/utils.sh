@@ -31,30 +31,34 @@ show_header() {
 
 # Display error message with new styling
 show_error() {
-    dialog --title "$(echo -e "${RED}${BOLD}Error${NC}")" \
-           --colors \
-           --msgbox "\n\Z1${BOLD}Error:${NC}\n\n\Z0$1" 10 60
+    dialog --colors \
+           --title "\Z1⚠️  Error\Zn" \
+           --backtitle "Core Node Installer" \
+           --msgbox "\n\Z1❌ Error:\Zn\n\n\Z0$1" 10 60
 }
 
 # Display success message with new styling
 show_success() {
-    dialog --title "$(echo -e "${GREEN}${BOLD}Success${NC}")" \
-           --colors \
-           --msgbox "\n\Z2${BOLD}Success:${NC}\n\n\Z0$1" 10 60
+    dialog --colors \
+           --title "\Z2✓ Success\Zn" \
+           --backtitle "Core Node Installer" \
+           --msgbox "\n\Z2✓ Success:\Zn\n\n\Z0$1" 10 60
 }
 
 # Display warning message with new styling
 show_warning() {
-    dialog --title "$(echo -e "${YELLOW}${BOLD}Warning${NC}")" \
-           --colors \
-           --msgbox "\n\Z3${BOLD}Warning:${NC}\n\n\Z0$1" 10 60
+    dialog --colors \
+           --title "\Z3⚠️  Warning\Zn" \
+           --backtitle "Core Node Installer" \
+           --msgbox "\n\Z3⚠️ Warning:\Zn\n\n\Z0$1" 10 60
 }
 
 # Display info message with new styling
 show_info() {
-    dialog --title "$(echo -e "${BLUE}${BOLD}Information${NC}")" \
-           --colors \
-           --msgbox "\n\Z4${BOLD}Info:${NC}\n\n\Z0$1" 10 60
+    dialog --colors \
+           --title "\Z4ℹ️  Information\Zn" \
+           --backtitle "Core Node Installer" \
+           --msgbox "\n\Z4ℹ️ Info:\Zn\n\n\Z0$1" 10 60
 }
 
 # Display progress with new styling

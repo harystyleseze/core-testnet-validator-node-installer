@@ -63,9 +63,57 @@ build_geth() {
     show_progress "Building geth binary..."
     
     cd "$CORE_CHAIN_DIR"
-    make geth
 
-    check_status "Geth built successfully!" "Failed to build geth"
+    # Check Go version and install correct version if needed
+    local required_go_version="1.19"
+    local current_go_version=""
+    
+    if command -v go &>/dev/null; then
+        current_go_version=$(go version | awk '{print $3}' | sed 's/go//')
+    fi
+
+    if [[ -z "$current_go_version" ]] || [[ "$(printf '%s\n' "$required_go_version" "$current_go_version" | sort -V | head -n1)" != "$required_go_version" ]]; then
+        show_warning "Installing Go version $required_go_version..."
+        
+        case $(detect_os) in
+            "macos")
+                brew install go@$required_go_version
+                brew link --force go@$required_go_version
+                ;;
+            "debian")
+                sudo apt-get update
+                sudo apt-get install -y golang-$required_go_version
+                ;;
+            "redhat")
+                sudo yum install -y golang
+                ;;
+            "arch")
+                sudo pacman -S --noconfirm go
+                ;;
+        esac
+    fi
+
+    # Set GOPATH and add to PATH
+    export GOPATH=$HOME/go
+    export PATH=$PATH:$GOPATH/bin
+
+    # Clean any previous build artifacts
+    make clean || true
+
+    # Build with specific version constraints
+    if ! make geth GO_VERSION=$required_go_version; then
+        show_error "Failed to build geth. Please check the logs for details."
+        return 1
+    fi
+
+    # Verify the binary was created
+    if [ ! -f "./build/bin/geth" ]; then
+        show_error "Geth binary not found after build."
+        return 1
+    fi
+
+    show_success "Geth built successfully!"
+    return 0
 }
 
 setup_node_directory() {
