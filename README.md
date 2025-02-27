@@ -21,7 +21,6 @@ This project provides a Terminal User Interface (TUI) to guide users through the
 - `hardware_check.sh`: Verifies that the system meets the hardware requirements for running a Core validator node.
 - `node_setup.sh`: Contains the logic for installing and setting up the node.
 - `log_monitor.sh`: The module for monitoring and managing logs, including the live log viewing dashboard and log statistics.
-- `admin_dashboard.sh`: The new module that provides administrative maintenance and management features for your validator node.
 
 ## Installation Process
 
@@ -168,8 +167,8 @@ The Admin Dashboard ensures that node maintenance is easy and safe, with confirm
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/core-node-installer.git
-   cd core-node-installer
+   git clone https://github.com/harystyleseze/core-testnet-validator-node-installer.git
+   cd core-testnet-validator-node-installer/core-node-installer
    ```
 
 2. Run the installer:
