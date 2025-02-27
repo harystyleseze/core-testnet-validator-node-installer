@@ -1,15 +1,17 @@
 #!/bin/bash
 
 # Color Scheme
-# Primary Color (Dark Blue for contrast with orange background)
-PRIMARY='\033[38;2;25;25;112m'       # Midnight Blue
+# Primary Colors
+PRIMARY='\033[38;2;248;146;19m'     # #F89213 - Orange
+SECONDARY='\033[38;2;247;116;2m'    # #F77402 - Deep Orange
+BG='\033[48;2;254;239;219m'        # #FEEFDB - Light Orange Background
+FG='\033[38;2;18;18;18m'           # #121212 - Almost Black
 # Complementary Colors
-BLUE='\033[38;2;0;71;171m'          # Deep Blue
-GREEN='\033[38;2;0;100;0m'          # Dark Green
-RED='\033[38;2;139;0;0m'            # Dark Red
-YELLOW='\033[38;2;184;134;11m'      # Dark Golden Rod
-WHITE='\033[38;2;248;248;255m'      # Ghost White
-GRAY='\033[38;2;47;79;79m'          # Dark Slate Gray
+BLUE='\033[38;2;0;48;73m'          # Dark Blue for contrast
+GREEN='\033[38;2;0;100;0m'         # Dark Green for success
+RED='\033[38;2;220;53;69m'         # Bootstrap Red for errors
+YELLOW='\033[38;2;255;193;7m'      # Warning Yellow
+WHITE='\033[38;2;255;255;255m'     # Pure White
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
@@ -175,35 +177,35 @@ style_dialog() {
 # Dialog color scheme
 use_shadow = ON
 use_colors = ON
-screen_color = (BLUE,YELLOW,ON)
-dialog_color = (BLUE,YELLOW,OFF)
-title_color = (BLUE,YELLOW,ON)
-border_color = (BLUE,YELLOW,ON)
+screen_color = (BLACK,WHITE,ON)
+dialog_color = (BLACK,WHITE,OFF)
+title_color = (WHITE,BLACK,ON)
+border_color = (BLACK,WHITE,ON)
 shadow_color = (BLACK,BLACK,ON)
-button_active_color = (YELLOW,BLUE,ON)
-button_inactive_color = (BLUE,YELLOW,OFF)
-button_key_active_color = (YELLOW,BLUE,ON)
-button_key_inactive_color = (RED,YELLOW,OFF)
-button_label_active_color = (YELLOW,BLUE,ON)
-button_label_inactive_color = (BLUE,YELLOW,ON)
-inputbox_color = (BLUE,YELLOW,OFF)
-inputbox_border_color = (BLUE,YELLOW,ON)
-searchbox_color = (BLUE,YELLOW,OFF)
-searchbox_title_color = (BLUE,YELLOW,ON)
-searchbox_border_color = (BLUE,YELLOW,ON)
-position_indicator_color = (BLUE,YELLOW,ON)
-menubox_color = (BLUE,YELLOW,OFF)
-menubox_border_color = (BLUE,YELLOW,ON)
-item_color = (BLUE,YELLOW,OFF)
-item_selected_color = (YELLOW,BLUE,ON)
-tag_color = (BLUE,YELLOW,ON)
-tag_selected_color = (YELLOW,BLUE,ON)
-tag_key_color = (BLUE,YELLOW,OFF)
-tag_key_selected_color = (YELLOW,BLUE,ON)
-check_color = (BLUE,YELLOW,OFF)
-check_selected_color = (YELLOW,BLUE,ON)
-uarrow_color = (BLUE,YELLOW,ON)
-darrow_color = (BLUE,YELLOW,ON)
+button_active_color = (WHITE,BLACK,ON)
+button_inactive_color = (BLACK,WHITE,OFF)
+button_key_active_color = (WHITE,BLACK,ON)
+button_key_inactive_color = (RED,WHITE,OFF)
+button_label_active_color = (WHITE,BLACK,ON)
+button_label_inactive_color = (BLACK,WHITE,ON)
+inputbox_color = (BLACK,WHITE,OFF)
+inputbox_border_color = (BLACK,WHITE,ON)
+searchbox_color = (BLACK,WHITE,OFF)
+searchbox_title_color = (WHITE,BLACK,ON)
+searchbox_border_color = (BLACK,WHITE,ON)
+position_indicator_color = (BLACK,WHITE,ON)
+menubox_color = (BLACK,WHITE,OFF)
+menubox_border_color = (BLACK,WHITE,ON)
+item_color = (BLACK,WHITE,OFF)
+item_selected_color = (WHITE,BLACK,ON)
+tag_color = (BLACK,WHITE,ON)
+tag_selected_color = (WHITE,BLACK,ON)
+tag_key_color = (BLACK,WHITE,OFF)
+tag_key_selected_color = (WHITE,BLACK,ON)
+check_color = (BLACK,WHITE,OFF)
+check_selected_color = (WHITE,BLACK,ON)
+uarrow_color = (BLACK,WHITE,ON)
+darrow_color = (BLACK,WHITE,ON)
 EOF
 }
 
@@ -237,4 +239,18 @@ install_dependencies() {
             sudo pacman -Sy --noconfirm "${deps[@]}"
             ;;
     esac
+}
+
+# Function to format requirement status
+format_requirement() {
+    local name="$1"
+    local required="$2"
+    local actual="$3"
+    local status="$4"
+    
+    if [ "$status" = "pass" ]; then
+        echo -e "${GREEN}${BOLD}✓${NC} ${FG}${name}${NC}: ${PRIMARY}${actual}${NC} ${DIM}(Required: ${required})${NC}"
+    else
+        echo -e "${RED}${BOLD}✗${NC} ${FG}${name}${NC}: ${RED}${actual}${NC} ${DIM}(Required: ${required})${NC}"
+    fi
 }

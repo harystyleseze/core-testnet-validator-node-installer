@@ -19,6 +19,8 @@ check_hardware_requirements() {
             sudo apt-get update && sudo apt-get install -y speedtest-cli
         elif [ -f /etc/redhat-release ]; then
             sudo yum install -y speedtest-cli
+        elif [[ "$OSTYPE" == "darwin"* ]]; then
+            brew install speedtest-cli
         else
             show_error "Could not install speedtest-cli. Please install it manually."
             return 1
@@ -33,44 +35,49 @@ check_hardware_requirements() {
 
     # Check CPU cores
     if [ "$CPU_CORES" -ge "$REQUIRED_CPU_CORES" ]; then
-        echo "CPU Cores: ✓ ($CPU_CORES cores available)" >> "$TEMP_FILE"
+        format_requirement "CPU Cores" "$REQUIRED_CPU_CORES" "$CPU_CORES" "pass" >> "$TEMP_FILE"
     else
-        echo "CPU Cores: ✗ (Required: $REQUIRED_CPU_CORES, Available: $CPU_CORES)" >> "$TEMP_FILE"
+        format_requirement "CPU Cores" "$REQUIRED_CPU_CORES" "$CPU_CORES" "fail" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Check RAM
     if [ "$TOTAL_RAM" -ge "$REQUIRED_RAM_GB" ]; then
-        echo "RAM: ✓ ($TOTAL_RAM GB available)" >> "$TEMP_FILE"
+        format_requirement "RAM" "${REQUIRED_RAM_GB}GB" "${TOTAL_RAM}GB" "pass" >> "$TEMP_FILE"
     else
-        echo "RAM: ✗ (Required: ${REQUIRED_RAM_GB}GB, Available: ${TOTAL_RAM}GB)" >> "$TEMP_FILE"
+        format_requirement "RAM" "${REQUIRED_RAM_GB}GB" "${TOTAL_RAM}GB" "fail" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Check Disk Space
     if [ "${FREE_DISK%.*}" -ge "$REQUIRED_DISK_GB" ]; then
-        echo "Disk Space: ✓ ($FREE_DISK GB available)" >> "$TEMP_FILE"
+        format_requirement "Disk Space" "${REQUIRED_DISK_GB}GB" "${FREE_DISK}GB" "pass" >> "$TEMP_FILE"
     else
-        echo "Disk Space: ✗ (Required: ${REQUIRED_DISK_GB}GB, Available: ${FREE_DISK}GB)" >> "$TEMP_FILE"
+        format_requirement "Disk Space" "${REQUIRED_DISK_GB}GB" "${FREE_DISK}GB" "fail" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Check Internet Speed
     if [ -n "$INTERNET_SPEED" ] && [ "${INTERNET_SPEED%.*}" -ge "$REQUIRED_INTERNET_SPEED" ]; then
-        echo "Internet Speed: ✓ ($INTERNET_SPEED Mbps)" >> "$TEMP_FILE"
+        format_requirement "Internet Speed" "${REQUIRED_INTERNET_SPEED}Mbps" "${INTERNET_SPEED}Mbps" "pass" >> "$TEMP_FILE"
     else
-        echo "Internet Speed: ✗ (Required: ${REQUIRED_INTERNET_SPEED}Mbps, Available: ${INTERNET_SPEED:-Unknown}Mbps)" >> "$TEMP_FILE"
+        format_requirement "Internet Speed" "${REQUIRED_INTERNET_SPEED}Mbps" "${INTERNET_SPEED:-0}Mbps" "fail" >> "$TEMP_FILE"
         FAILED=1
     fi
 
-    # Display results
-    dialog --title "Hardware Requirements Check" --textbox "$TEMP_FILE" 15 60
+    # Display results with new styling
+    dialog --colors \
+           --title "System Requirements Check" \
+           --backtitle "Core Node Installer" \
+           --cr-wrap \
+           --no-collapse \
+           --textbox "$TEMP_FILE" 15 70
 
     # Clean up
     rm -f "$TEMP_FILE"
 
     if [ "$FAILED" = "1" ]; then
-        show_error "Your system does not meet the minimum requirements. Please upgrade your hardware and try again."
+        show_error "Your system does not meet the minimum requirements.\nPlease review the requirements and try again after upgrading your hardware."
         log_message "Hardware check failed"
         return 1
     fi
