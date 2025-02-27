@@ -151,7 +151,7 @@ show_main_menu() {
     local requirements_met=false
     local node_installed=false
 
-    # Function to check if node is installed
+    # Function to check if node is installed - only used for log/dashboard access
     check_node_installation() {
         if [ -f "$INSTALL_DIR/start-node.sh" ] && [ -d "$INSTALL_DIR/core-chain" ]; then
             node_installed=true
@@ -161,7 +161,10 @@ show_main_menu() {
     }
 
     while true; do
-        check_node_installation
+        # Only check node installation for menu items that require it
+        if [[ "$choice" =~ ^[345]$ ]]; then
+            check_node_installation
+        fi
 
         choice=$(dialog --colors \
                        --title " Core Node Installer - Main Menu " \
@@ -180,17 +183,26 @@ show_main_menu() {
                 if verify_requirements; then
                     requirements_met=true
                     show_success "Hardware requirements verified.\nYou can now proceed with the installation."
+                    
+                    # Prompt user to proceed with installation
+                    dialog --colors \
+                           --title " Proceed with Installation? " \
+                           --yesno "\n✓ System requirements met!\n\nWould you like to proceed with the\nCore Node installation now?" 10 45
+                    
+                    if [ $? -eq 0 ]; then
+                        setup_node || true
+                    fi
                 fi
                 ;;
             2)
                 if [ "$requirements_met" = true ] || verify_requirements; then
                     setup_node || true
-                    check_node_installation
                 else
                     show_error "Please verify hardware requirements before installation."
                 fi
                 ;;
             3)
+                check_node_installation
                 if [ "$node_installed" = true ]; then
                     show_log_monitor_menu || true
                 else
@@ -202,6 +214,7 @@ show_main_menu() {
                 fi
                 ;;
             4)
+                check_node_installation
                 if [ "$node_installed" = true ]; then
                     manage_node || true
                 else
@@ -213,6 +226,7 @@ show_main_menu() {
                 fi
                 ;;
             5)
+                check_node_installation
                 if [ "$node_installed" = true ]; then
                     if [ -f "core_installer.log" ]; then
                         dialog --colors \
