@@ -13,15 +13,13 @@ handle_error() {
     local last_command=$4
     local func_trace=$5
 
-    echo "Error occurred in install.sh"
-    echo "Exit code: $exit_code"
-    echo "Line number: $line_no"
-    echo "Command: $last_command"
-    echo "Function trace: $func_trace"
+    log_message "Error occurred in install.sh" "error"
+    log_message "Exit code: $exit_code" "error"
+    log_message "Line number: $line_no" "error"
+    log_message "Command: $last_command" "error"
+    log_message "Function trace: $func_trace" "error"
 
-    dialog --title "Error" \
-           --msgbox "An error occurred while running the installer.\nPlease check the logs for details." 8 50
-    
+    show_error "An error occurred while running the installer.\nPlease check the logs for details."
     exit "$exit_code"
 }
 
@@ -51,19 +49,21 @@ install_dialog() {
     local install_cmd=""
     local package_name="dialog"
     
-    echo "Dialog is not installed. Would you like to install it? (y/n)"
+    echo -e "${PRIMARY}${BOLD}Dialog is not installed. Would you like to install it? (y/n)${NC}"
     read -r response
     
     if [[ "$response" =~ ^[Yy]$ ]]; then
         case $os_type in
             "macos")
                 if ! command_exists brew; then
-                    echo "Homebrew is not installed. Would you like to install it? (y/n)"
+                    echo -e "${YELLOW}${BOLD}Homebrew is not installed. Would you like to install it? (y/n)${NC}"
                     read -r brew_response
                     if [[ "$brew_response" =~ ^[Yy]$ ]]; then
+                        show_progress "Installing Homebrew..."
                         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                        show_status "Homebrew installed successfully" "success"
                     else
-                        echo "Cannot proceed without Homebrew on macOS."
+                        show_error "Cannot proceed without Homebrew on macOS."
                         exit 1
                     fi
                 fi
@@ -79,26 +79,26 @@ install_dialog() {
                 install_cmd="sudo pacman -S --noconfirm"
                 ;;
             *)
-                echo "Unsupported operating system. Please install dialog manually."
+                show_error "Unsupported operating system. Please install dialog manually."
                 exit 1
                 ;;
         esac
 
-        echo "Installing dialog..."
+        show_progress "Installing dialog..."
         if ! eval "$install_cmd $package_name"; then
-            echo "Failed to install dialog. Please install it manually."
+            show_error "Failed to install dialog. Please install it manually."
             exit 1
         fi
-        echo "Dialog installed successfully!"
+        show_status "Dialog installed successfully!" "success"
     else
-        echo "Cannot proceed without dialog. Please install it manually."
+        show_error "Cannot proceed without dialog. Please install it manually."
         exit 1
     fi
 }
 
 # Check if running in correct directory
 if [[ ! -f "$(dirname "$0")/utils.sh" ]]; then
-    echo "Error: Required files not found. Please run this script from the core-node-installer directory."
+    show_error "Required files not found.\nPlease run this script from the core-node-installer directory."
     exit 1
 fi
 
@@ -109,28 +109,36 @@ fi
 
 # Source utils and other scripts
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/utils.sh" || { echo "Error loading utils.sh"; exit 1; }
-source "$SCRIPT_DIR/hardware_check.sh" || { echo "Error loading hardware_check.sh"; exit 1; }
-source "$SCRIPT_DIR/node_setup.sh" || { echo "Error loading node_setup.sh"; exit 1; }
-source "$SCRIPT_DIR/log_monitor.sh" || { echo "Error loading log_monitor.sh"; exit 1; }
+source "$SCRIPT_DIR/utils.sh" || { show_error "Error loading utils.sh"; exit 1; }
+source "$SCRIPT_DIR/hardware_check.sh" || { show_error "Error loading hardware_check.sh"; exit 1; }
+source "$SCRIPT_DIR/node_setup.sh" || { show_error "Error loading node_setup.sh"; exit 1; }
+source "$SCRIPT_DIR/log_monitor.sh" || { show_error "Error loading log_monitor.sh"; exit 1; }
+
+# Initialize dialog styling
+style_dialog
 
 show_welcome_screen() {
-    dialog --title "Core Testnet Node Installer" \
-           --msgbox "\nWelcome to the Core Testnet Node Installer!\n\nThis tool will help you set up a Core testnet validator node on your system.\n\nBefore proceeding, we'll check if your system meets the minimum requirements.\n\nPress OK to continue." 12 60 || return 1
+    show_header "Core Testnet Node Installer"
+    dialog --colors \
+           --title "$(echo -e "${PRIMARY}${BOLD}Welcome${NC}")" \
+           --msgbox "\n${PRIMARY}${BOLD}Welcome to the Core Testnet Node Installer!${NC}\n\nThis tool will help you set up a Core testnet validator node on your system.\n\nBefore proceeding, we'll check if your system meets the minimum requirements.\n\nPress OK to continue." 12 70 || return 1
 }
 
 verify_requirements() {
-    dialog --title "Hardware Requirements Check" \
-           --yesno "\nBefore proceeding with the installation, we need to verify your system meets the minimum requirements:\n\n- CPU: 4 cores\n- RAM: 8 GB\n- Storage: 1 TB free space\n- Internet: 10 Mbps\n\nWould you like to check your system requirements now?" 15 60
+    dialog --colors \
+           --title "$(echo -e "${PRIMARY}${BOLD}Hardware Requirements Check${NC}")" \
+           --yesno "\n${BOLD}Before proceeding with the installation, we need to verify your system meets the minimum requirements:${NC}\n\n${PRIMARY}▸ CPU:${NC} 4 cores\n${PRIMARY}▸ RAM:${NC} 8 GB\n${PRIMARY}▸ Storage:${NC} 1 TB free space\n${PRIMARY}▸ Internet:${NC} 10 Mbps\n\nWould you like to check your system requirements now?" 15 70
 
     if [ $? -eq 0 ]; then
         if check_hardware_requirements; then
-            dialog --title "Success" \
-                   --yesno "\nYour system meets all the requirements!\n\nWould you like to proceed with the installation?" 10 50
+            dialog --colors \
+                   --title "$(echo -e "${GREEN}${BOLD}Success${NC}")" \
+                   --yesno "\n${GREEN}${BOLD}✓ Your system meets all the requirements!${NC}\n\nWould you like to proceed with the installation?" 10 60
             return $?
         else
-            dialog --title "Error" \
-                   --msgbox "\nYour system does not meet the minimum requirements.\n\nPlease upgrade your hardware and try again." 10 50
+            dialog --colors \
+                   --title "$(echo -e "${RED}${BOLD}Error${NC}")" \
+                   --msgbox "\n${RED}${BOLD}✗ Your system does not meet the minimum requirements.${NC}\n\nPlease upgrade your hardware and try again." 10 60
             return 1
         fi
     else
@@ -142,30 +150,29 @@ show_main_menu() {
     local requirements_met=false
 
     while true; do
-        choice=$(dialog --title "Core Node Installer - Main Menu" \
-                       --menu "Choose an option:" 15 60 6 \
-                       1 "Check Hardware Requirements" \
-                       2 "Install Core Node" \
-                       3 "Log Monitoring Dashboard" \
-                       4 "Start/Stop Node" \
-                       5 "View Installation Log" \
-                       6 "Exit" \
+        choice=$(dialog --colors \
+                       --title "$(echo -e "${PRIMARY}${BOLD}Core Node Installer - Main Menu${NC}")" \
+                       --menu "\nChoose an option:" 15 70 6 \
+                       1 "${PRIMARY}▸${NC} Check Hardware Requirements" \
+                       2 "${PRIMARY}▸${NC} Install Core Node" \
+                       3 "${PRIMARY}▸${NC} Log Monitoring Dashboard" \
+                       4 "${PRIMARY}▸${NC} Start/Stop Node" \
+                       5 "${PRIMARY}▸${NC} View Installation Log" \
+                       6 "${PRIMARY}▸${NC} Exit" \
                        2>&1 >/dev/tty) || return 1
 
         case $choice in
             1)
                 if verify_requirements; then
                     requirements_met=true
-                    dialog --title "Success" \
-                           --msgbox "Hardware requirements verified. You can now proceed with the installation." 8 60 || true
+                    show_success "Hardware requirements verified.\nYou can now proceed with the installation."
                 fi
                 ;;
             2)
                 if [ "$requirements_met" = true ] || verify_requirements; then
                     setup_node || true
                 else
-                    dialog --title "Error" \
-                           --msgbox "Please verify hardware requirements before installation." 8 60 || true
+                    show_error "Please verify hardware requirements before installation."
                 fi
                 ;;
             3)
@@ -175,20 +182,21 @@ show_main_menu() {
                 if [ "$requirements_met" = true ] || [ -f "$INSTALL_DIR/start-node.sh" ]; then
                     manage_node || true
                 else
-                    dialog --title "Error" \
-                           --msgbox "Please install the node first." 8 40 || true
+                    show_error "Please install the node first."
                 fi
                 ;;
             5)
                 if [ -f "core_installer.log" ]; then
-                    dialog --title "Installation Log" --textbox "core_installer.log" 20 70 || true
+                    dialog --colors \
+                           --title "$(echo -e "${PRIMARY}${BOLD}Installation Log${NC}")" \
+                           --textbox "core_installer.log" 20 70 || true
                 else
-                    dialog --title "Error" --msgbox "No installation log found." 8 40 || true
+                    show_error "No installation log found."
                 fi
                 ;;
             6)
                 clear
-                echo "Thank you for using Core Node Installer!"
+                show_header "Thank you for using Core Node Installer!"
                 exit 0
                 ;;
             *)
@@ -255,6 +263,6 @@ manage_node() {
 if show_welcome_screen; then
     show_main_menu
 else
-    echo "Error: Failed to show welcome screen"
+    show_error "Failed to show welcome screen"
     exit 1
 fi
