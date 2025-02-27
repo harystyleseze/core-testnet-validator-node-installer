@@ -43,7 +43,28 @@ show_welcome_screen() {
            --msgbox "\nWelcome to the Core Testnet Node Installer!\n\nThis tool will help you set up a Core testnet validator node on your system.\n\nBefore proceeding, we'll check if your system meets the minimum requirements.\n\nPress OK to continue." 12 60 || return 1
 }
 
+verify_requirements() {
+    dialog --title "Hardware Requirements Check" \
+           --yesno "\nBefore proceeding with the installation, we need to verify your system meets the minimum requirements:\n\n- CPU: 4 cores\n- RAM: 8 GB\n- Storage: 1 TB free space\n- Internet: 10 Mbps\n\nWould you like to check your system requirements now?" 15 60
+
+    if [ $? -eq 0 ]; then
+        if check_hardware_requirements; then
+            dialog --title "Success" \
+                   --yesno "\nYour system meets all the requirements!\n\nWould you like to proceed with the installation?" 10 50
+            return $?
+        else
+            dialog --title "Error" \
+                   --msgbox "\nYour system does not meet the minimum requirements.\n\nPlease upgrade your hardware and try again." 10 50
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
 show_main_menu() {
+    local requirements_met=false
+
     while true; do
         choice=$(dialog --title "Core Node Installer - Main Menu" \
                        --menu "Choose an option:" 15 60 6 \
@@ -57,21 +78,30 @@ show_main_menu() {
 
         case $choice in
             1)
-                check_hardware_requirements || true
+                if verify_requirements; then
+                    requirements_met=true
+                    dialog --title "Success" \
+                           --msgbox "Hardware requirements verified. You can now proceed with the installation." 8 60 || true
+                fi
                 ;;
             2)
-                if check_hardware_requirements; then
+                if [ "$requirements_met" = true ] || verify_requirements; then
                     setup_node || true
                 else
                     dialog --title "Error" \
-                           --msgbox "Hardware requirements not met. Please upgrade your system before proceeding." 8 60 || true
+                           --msgbox "Please verify hardware requirements before installation." 8 60 || true
                 fi
                 ;;
             3)
                 show_log_monitor_menu || true
                 ;;
             4)
-                manage_node || true
+                if [ "$requirements_met" = true ] || [ -f "$INSTALL_DIR/start-node.sh" ]; then
+                    manage_node || true
+                else
+                    dialog --title "Error" \
+                           --msgbox "Please install the node first." 8 40 || true
+                fi
                 ;;
             5)
                 if [ -f "core_installer.log" ]; then

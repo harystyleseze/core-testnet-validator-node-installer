@@ -62,7 +62,7 @@ show_live_logs() {
     if [[ ! -f "$log_file" ]]; then
         dialog --title "Error" --msgbox "Log file not found: $log_file" 8 50
         return 1
-    }
+    fi
     
     # Create temporary file for formatted logs
     local temp_file
@@ -91,7 +91,7 @@ show_log_stats() {
     if [[ ! -f "$log_file" ]]; then
         dialog --title "Error" --msgbox "Log file not found: $log_file" 8 50
         return 1
-    }
+    fi
     
     local temp_file
     temp_file=$(mktemp) || { dialog --title "Error" --msgbox "Failed to create temporary file" 8 40; return 1; }
@@ -125,7 +125,7 @@ search_logs() {
     if [[ ! -f "$log_file" ]]; then
         dialog --title "Error" --msgbox "Log file not found: $log_file" 8 50
         return 1
-    }
+    fi
 
     local search_term
     search_term=$(dialog --title "Search Logs" \
