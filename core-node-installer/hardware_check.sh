@@ -33,56 +33,67 @@ check_hardware_requirements() {
     # Create temporary file for dialog checklist
     TEMP_FILE=$(mktemp)
 
+    # Add header to temp file
+    echo -e "\n  System Requirements Check\n  ────────────────────────\n" >> "$TEMP_FILE"
+
     # Check CPU cores
     if [ "$CPU_CORES" -ge "$REQUIRED_CPU_CORES" ]; then
-        format_requirement "CPU Cores" "$REQUIRED_CPU_CORES" "$CPU_CORES" "pass" >> "$TEMP_FILE"
+        echo -e "  ✓ CPU Cores:        ${CPU_CORES} cores\n    Required:         ${REQUIRED_CPU_CORES} cores\n" >> "$TEMP_FILE"
     else
-        format_requirement "CPU Cores" "$REQUIRED_CPU_CORES" "$CPU_CORES" "fail" >> "$TEMP_FILE"
+        echo -e "  ✗ CPU Cores:        ${CPU_CORES} cores\n    Required:         ${REQUIRED_CPU_CORES} cores\n" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Check RAM
     if [ "$TOTAL_RAM" -ge "$REQUIRED_RAM_GB" ]; then
-        format_requirement "RAM" "${REQUIRED_RAM_GB}GB" "${TOTAL_RAM}GB" "pass" >> "$TEMP_FILE"
+        echo -e "  ✓ Memory:           ${TOTAL_RAM} GB\n    Required:         ${REQUIRED_RAM_GB} GB\n" >> "$TEMP_FILE"
     else
-        format_requirement "RAM" "${REQUIRED_RAM_GB}GB" "${TOTAL_RAM}GB" "fail" >> "$TEMP_FILE"
+        echo -e "  ✗ Memory:           ${TOTAL_RAM} GB\n    Required:         ${REQUIRED_RAM_GB} GB\n" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Check Disk Space
     if [ "${FREE_DISK%.*}" -ge "$REQUIRED_DISK_GB" ]; then
-        format_requirement "Disk Space" "${REQUIRED_DISK_GB}GB" "${FREE_DISK}GB" "pass" >> "$TEMP_FILE"
+        echo -e "  ✓ Storage:          ${FREE_DISK} GB\n    Required:         ${REQUIRED_DISK_GB} GB\n" >> "$TEMP_FILE"
     else
-        format_requirement "Disk Space" "${REQUIRED_DISK_GB}GB" "${FREE_DISK}GB" "fail" >> "$TEMP_FILE"
+        echo -e "  ✗ Storage:          ${FREE_DISK} GB\n    Required:         ${REQUIRED_DISK_GB} GB\n" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Check Internet Speed
     if [ -n "$INTERNET_SPEED" ] && [ "${INTERNET_SPEED%.*}" -ge "$REQUIRED_INTERNET_SPEED" ]; then
-        format_requirement "Internet Speed" "${REQUIRED_INTERNET_SPEED}Mbps" "${INTERNET_SPEED}Mbps" "pass" >> "$TEMP_FILE"
+        echo -e "  ✓ Internet Speed:   ${INTERNET_SPEED} Mbps\n    Required:         ${REQUIRED_INTERNET_SPEED} Mbps\n" >> "$TEMP_FILE"
     else
-        format_requirement "Internet Speed" "${REQUIRED_INTERNET_SPEED}Mbps" "${INTERNET_SPEED:-0}Mbps" "fail" >> "$TEMP_FILE"
+        echo -e "  ✗ Internet Speed:   ${INTERNET_SPEED:-0} Mbps\n    Required:         ${REQUIRED_INTERNET_SPEED} Mbps\n" >> "$TEMP_FILE"
         FAILED=1
     fi
 
     # Display results with new styling
     dialog --colors \
-           --title "System Requirements Check" \
+           --title " System Requirements " \
            --backtitle "Core Node Installer" \
            --cr-wrap \
            --no-collapse \
-           --textbox "$TEMP_FILE" 15 70
+           --textbox "$TEMP_FILE" 20 50
 
     # Clean up
     rm -f "$TEMP_FILE"
 
     if [ "$FAILED" = "1" ]; then
-        show_error "Your system does not meet the minimum requirements.\nPlease review the requirements and try again after upgrading your hardware."
+        dialog --colors \
+               --title " Requirements Not Met " \
+               --backtitle "Core Node Installer" \
+               --msgbox "\n  ⚠️  System requirements not met\n\n  Please ensure your system meets the\n  minimum requirements before proceeding.\n\n  Review the previous screen for details." \
+               12 45
         log_message "Hardware check failed"
         return 1
     fi
 
-    show_success "Your system meets all the minimum requirements!"
+    dialog --colors \
+           --title " Requirements Met " \
+           --backtitle "Core Node Installer" \
+           --msgbox "\n  ✓ All system requirements met!\n\n  Your system is ready for\n  Core Node installation.\n\n  Press ENTER to continue." \
+           12 45
     log_message "Hardware check passed"
     return 0
 }
