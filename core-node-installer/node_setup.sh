@@ -49,13 +49,20 @@ clone_core_repository() {
     if [ -d "$CORE_CHAIN_DIR" ]; then
         show_progress "Core Chain directory already exists. Updating..."
         cd "$CORE_CHAIN_DIR"
-        git pull
+        git fetch --all
+        git fetch --tags
     else
         git clone https://github.com/coredao-org/core-chain
         cd "$CORE_CHAIN_DIR"
+        git fetch --tags
     fi
 
-    check_status "Repository cloned/updated successfully!" "Failed to clone/update repository"
+    # Get latest tag name
+    latestTag=$(git describe --tags `git rev-list --tags --max-count=1`)
+    show_progress "Checking out latest tag: $latestTag"
+    git checkout $latestTag
+
+    check_status "Repository cloned/updated and tag checked out successfully!" "Failed to clone/update repository"
 }
 
 build_geth() {
@@ -65,7 +72,7 @@ build_geth() {
     cd "$CORE_CHAIN_DIR"
 
     # Check Go version and install correct version if needed
-    local required_go_version="1.19"
+    local required_go_version="1.19.6"
     local current_go_version=""
     
     if command -v go &>/dev/null; then
@@ -75,22 +82,40 @@ build_geth() {
     if [[ -z "$current_go_version" ]] || [[ "$(printf '%s\n' "$required_go_version" "$current_go_version" | sort -V | head -n1)" != "$required_go_version" ]]; then
         show_warning "Installing Go version $required_go_version..."
         
-        case $(detect_os) in
-            "macos")
-                brew install go@$required_go_version
-                brew link --force go@$required_go_version
-                ;;
-            "debian")
-                sudo apt-get update
-                sudo apt-get install -y golang-$required_go_version
-                ;;
-            "redhat")
-                sudo yum install -y golang
-                ;;
-            "arch")
-                sudo pacman -S --noconfirm go
-                ;;
-        esac
+        # Download and install Go
+        local go_archive="go${required_go_version}.linux-amd64.tar.gz"
+        local go_url="https://go.dev/dl/${go_archive}"
+        
+        show_progress "Downloading Go ${required_go_version}..."
+        if ! wget -O go.tar.gz "$go_url"; then
+            show_error "Failed to download Go"
+            return 1
+        fi
+
+        show_progress "Installing Go ${required_go_version}..."
+        sudo rm -rf /usr/local/go
+        sudo tar -C /usr/local -xzf go.tar.gz
+        rm go.tar.gz
+
+        # Update PATH in shell config files
+        for shell_rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+            if [ -f "$shell_rc" ]; then
+                if ! grep -q "/usr/local/go/bin" "$shell_rc"; then
+                    echo "export PATH=\$PATH:/usr/local/go/bin" >> "$shell_rc"
+                fi
+            fi
+        done
+
+        # Update current session PATH
+        export PATH=$PATH:/usr/local/go/bin
+        
+        # Verify Go installation
+        if ! command -v go &>/dev/null; then
+            show_error "Go installation failed"
+            return 1
+        fi
+        
+        show_success "Go ${required_go_version} installed successfully!"
     fi
 
     # Set GOPATH and add to PATH
@@ -98,10 +123,12 @@ build_geth() {
     export PATH=$PATH:$GOPATH/bin
 
     # Clean any previous build artifacts
+    show_progress "Cleaning previous build artifacts..."
     make clean || true
 
-    # Build with specific version constraints
-    if ! make geth GO_VERSION=$required_go_version; then
+    # Build geth from the latest tag
+    show_progress "Building geth from latest tag..."
+    if ! make geth; then
         show_error "Failed to build geth. Please check the logs for details."
         return 1
     fi
@@ -112,7 +139,20 @@ build_geth() {
         return 1
     fi
 
-    show_success "Geth built successfully!"
+    # Install the binary to /usr/local/bin
+    show_progress "Installing geth binary to /usr/local/bin..."
+    if ! sudo cp "./build/bin/geth" /usr/local/bin/; then
+        show_error "Failed to install geth binary to /usr/local/bin"
+        return 1
+    fi
+
+    # Verify geth installation
+    if ! command -v geth &>/dev/null; then
+        show_error "Geth installation verification failed"
+        return 1
+    fi
+
+    show_success "Geth built and installed successfully!"
     return 0
 }
 
