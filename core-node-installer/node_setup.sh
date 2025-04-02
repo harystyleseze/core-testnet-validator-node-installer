@@ -12,30 +12,76 @@ install_dependencies() {
     log_message "Installing dependencies"
     show_progress "Installing required packages..."
     
+    # Define required packages
+    local required_packages=(
+        "git"
+        "gcc"
+        "make"
+        "curl"
+        "lz4"
+        "unzip"
+    )
+    
     if [ -f /etc/debian_version ]; then
-        sudo apt update
-        sudo apt install -y git gcc make curl lz4 golang unzip
+        show_progress "Detected Debian/Ubuntu system..."
+        
+        # Update package list
+        show_progress "Updating package lists..."
+        if ! sudo apt update; then
+            show_error "Failed to update package lists"
+            return 1
+        fi
+        
+        # Install packages
+        show_progress "Installing required packages..."
+        if ! sudo apt install -y "${required_packages[@]}"; then
+            show_error "Failed to install required packages"
+            return 1
+        fi
     elif [ -f /etc/redhat-release ]; then
-        sudo yum install -y git gcc make curl lz4 golang unzip
+        show_progress "Detected RedHat/CentOS system..."
+        if ! sudo yum install -y "${required_packages[@]}"; then
+            show_error "Failed to install required packages"
+            return 1
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        show_progress "Detected macOS system..."
+        if ! command -v brew &>/dev/null; then
+            show_warning "Homebrew is not installed. Installing..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        fi
+        for package in "${required_packages[@]}"; do
+            if ! brew list "$package" &>/dev/null; then
+                show_progress "Installing $package..."
+                if ! brew install "$package"; then
+                    show_error "Failed to install $package"
+                    return 1
+                fi
+            fi
+        done
     else
-        show_error "Unsupported distribution. Please install dependencies manually."
+        show_error "Unsupported distribution. Please install dependencies manually:\n${required_packages[*]}"
         return 1
     fi
 
-    # Verify installations
+    # Verify all required packages are installed
     local FAILED=0
-    for cmd in git gcc make curl lz4 go unzip; do
-        if ! command -v $cmd &> /dev/null; then
-            show_error "$cmd is not installed properly"
+    for package in "${required_packages[@]}"; do
+        show_progress "Verifying $package installation..."
+        if ! command -v "$package" &>/dev/null; then
+            show_error "$package is not installed or not in PATH"
             FAILED=1
+        else
+            show_status "$package is installed" "success"
         fi
     done
 
     if [ $FAILED -eq 1 ]; then
+        show_error "Some required packages are missing. Please install them manually."
         return 1
     fi
 
-    show_success "All dependencies installed successfully!"
+    show_success "All dependencies installed and verified successfully!"
     return 0
 }
 
@@ -72,7 +118,7 @@ build_geth() {
     cd "$CORE_CHAIN_DIR"
 
     # Check Go version and install correct version if needed
-    local required_go_version="1.19.6"
+    local required_go_version="1.21.8"  # Updated to latest stable Go 1.21
     local current_go_version=""
     
     if command -v go &>/dev/null; then
@@ -83,7 +129,11 @@ build_geth() {
         show_warning "Installing Go version $required_go_version..."
         
         # Download and install Go
-        local go_archive="go${required_go_version}.linux-amd64.tar.gz"
+        local os_arch="linux-amd64"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            os_arch="darwin-amd64"
+        fi
+        local go_archive="go${required_go_version}.${os_arch}.tar.gz"
         local go_url="https://go.dev/dl/${go_archive}"
         
         show_progress "Downloading Go ${required_go_version}..."
@@ -125,6 +175,27 @@ build_geth() {
     # Clean any previous build artifacts
     show_progress "Cleaning previous build artifacts..."
     make clean || true
+
+    # Update and verify dependencies
+    show_progress "Updating Go modules..."
+    if ! go mod tidy; then
+        show_error "Failed to update Go modules"
+        return 1
+    fi
+
+    # Download all dependencies
+    show_progress "Downloading dependencies..."
+    if ! go mod download; then
+        show_error "Failed to download dependencies"
+        return 1
+    fi
+
+    # Verify dependencies
+    show_progress "Verifying dependencies..."
+    if ! go mod verify; then
+        show_error "Module verification failed"
+        return 1
+    fi
 
     # Build geth from the latest tag
     show_progress "Building geth from latest tag..."
