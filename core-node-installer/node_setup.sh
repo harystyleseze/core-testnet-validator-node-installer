@@ -231,12 +231,11 @@ setup_node_directory() {
     log_message "Setting up node directory"
     show_progress "Setting up node directory..."
     
-    mkdir -p "$NODE_DIR"
-
-    # Download testnet files
-    cd "$CORE_CHAIN_DIR"
-    wget https://github.com/coredao-org/core-chain/releases/download/v1.0.14/testnet2.zip
-    unzip -o testnet2.zip
+    mkdir -p "$NODE_DIR/logs"
+    
+    # Copy local config files instead of downloading
+    cp "$(dirname "$0")/config.toml" "$CORE_CHAIN_DIR/testnet2/config.toml"
+    cp "$(dirname "$0")/genesis.json" "$CORE_CHAIN_DIR/testnet2/genesis.json"
 
     check_status "Node directory setup completed!" "Failed to setup node directory"
 }
@@ -272,14 +271,143 @@ initialize_genesis() {
 
 create_startup_script() {
     log_message "Creating startup script"
+    
+    # Ensure logs directory exists
+    mkdir -p "$NODE_DIR/logs"
+    
+    # Create the startup script with proper paths and logging
     cat > "$INSTALL_DIR/start-node.sh" << 'EOF'
 #!/bin/bash
-cd "$(dirname "$0")/core-chain"
-./build/bin/geth --config ./testnet2/config.toml --datadir ./node --cache 8000 --rpc.allow-unprotected-txs --networkid 1114
+
+# Set working directory
+NODE_BASE_DIR="$(dirname "$0")"
+cd "$NODE_BASE_DIR/core-chain"
+
+# Ensure logs directory exists
+mkdir -p ./node/logs
+
+# Start geth with specified configuration
+./build/bin/geth --config ./testnet2/config.toml \
+                 --datadir ./node \
+                 --cache 8000 \
+                 --rpc.allow-unprotected-txs \
+                 --networkid 1114 \
+                 --verbosity 4 \
+                 2>&1 | tee ./node/logs/core.log
 EOF
 
     chmod +x "$INSTALL_DIR/start-node.sh"
     show_success "Startup script created at $INSTALL_DIR/start-node.sh"
+}
+
+start_node() {
+    log_message "Starting Core node"
+    show_progress "Starting Core node..."
+    
+    # Check if node is already running
+    if pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Node is already running!"
+        return 1
+    }
+
+    # Create logs directory if it doesn't exist
+    mkdir -p "$NODE_DIR/logs"
+
+    # Start the node in the background
+    cd "$CORE_CHAIN_DIR"
+    ./build/bin/geth --config ./testnet2/config.toml \
+                     --datadir ./node \
+                     --cache 8000 \
+                     --rpc.allow-unprotected-txs \
+                     --networkid 1114 \
+                     --verbosity 4 \
+                     2>&1 | tee "$NODE_DIR/logs/core.log" &
+
+    # Wait a moment for the process to start
+    sleep 5
+    
+    # Check if the process is running
+    if ! pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Failed to start node"
+        return 1
+    fi
+
+    # Show log file location
+    local log_file="$NODE_DIR/logs/core.log"
+    
+    show_success "Node started successfully!\n\nTo view logs, run:\ntail -f $log_file"
+    
+    # Ask if user wants to view logs
+    dialog --title "View Logs" \
+           --yesno "\nWould you like to view the node logs now?" 7 50
+    
+    if [ $? -eq 0 ]; then
+        # Show logs in a scrollable dialog
+        tail -f "$log_file" 2>/dev/null | \
+        dialog --title "Core Node Logs (Press Ctrl+C to exit)" \
+               --programbox 20 120
+    fi
+}
+
+show_post_build_menu() {
+    while true; do
+        choice=$(dialog --title "Core Node Setup" \
+                       --menu "\nGeth built successfully! Choose next action:" 15 60 4 \
+                       1 "Start Node (Without Snapshot)" \
+                       2 "Download Snapshot First" \
+                       3 "View Node Status" \
+                       4 "Exit" \
+                       2>&1 >/dev/tty) || return 1
+
+        case $choice in
+            1)
+                if initialize_genesis && start_node; then
+                    return 0
+                fi
+                ;;
+            2)
+                if download_snapshot && initialize_genesis && start_node; then
+                    return 0
+                fi
+                ;;
+            3)
+                show_node_status
+                ;;
+            4)
+                return 0
+                ;;
+        esac
+    done
+}
+
+show_node_status() {
+    # Create temporary file for status info
+    local temp_file=$(mktemp)
+    
+    {
+        echo "Core Node Status"
+        echo "================"
+        echo
+        if pgrep -f "geth.*--networkid 1114" > /dev/null; then
+            echo "Node Status: Running"
+            echo "Process ID: $(pgrep -f "geth.*--networkid 1114")"
+        else
+            echo "Node Status: Not Running"
+        fi
+        echo
+        echo "Installation Directory: $INSTALL_DIR"
+        echo "Data Directory: $NODE_DIR"
+        echo "Log File: $NODE_DIR/logs/core.log"
+        echo
+        echo "Last 5 Log Entries:"
+        echo "-------------------"
+        tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs available yet"
+    } > "$temp_file"
+
+    dialog --title "Node Status" \
+           --textbox "$temp_file" 20 70
+
+    rm -f "$temp_file"
 }
 
 setup_node() {
@@ -289,9 +417,6 @@ setup_node() {
         "Cloning Repository" "clone_core_repository"
         "Building Geth" "build_geth"
         "Setting up Node Directory" "setup_node_directory"
-        "Downloading Snapshot" "download_snapshot"
-        "Initializing Genesis" "initialize_genesis"
-        "Creating Startup Script" "create_startup_script"
     )
 
     local total_steps=$((${#steps[@]} / 2))
@@ -313,8 +438,9 @@ setup_node() {
         ((current_step++))
     done
 
-    show_success "Core node setup completed successfully!\n\nTo start your node, run:\n$INSTALL_DIR/start-node.sh"
-    return 0
+    # Show post-build menu
+    show_post_build_menu
+    return $?
 }
 
 # Run setup if script is run directly
