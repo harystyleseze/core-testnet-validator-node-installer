@@ -148,177 +148,86 @@ verify_requirements() {
 }
 
 show_main_menu() {
-    local requirements_met=false
-    local node_installed=false
-
-    # Function to check if node is installed - only used for log/dashboard access
-    check_node_installation() {
-        if [ -f "$INSTALL_DIR/start-node.sh" ] && [ -d "$INSTALL_DIR/core-chain" ]; then
-            node_installed=true
-            return 0
-        fi
-        return 1
-    }
-
     while true; do
-        # Only check node installation for menu items that require it
-        if [[ "$choice" =~ ^[345]$ ]]; then
-            check_node_installation
+        local node_installed=false
+        if check_node_installed; then
+            node_installed=true
         fi
 
         choice=$(dialog --colors \
-                       --title " Core Node Installer - Main Menu " \
+                       --title "Core Node Installer - Main Menu" \
                        --backtitle "Core Node Installer" \
+                       --ok-label "Select" \
+                       --cancel-label "Exit" \
                        --menu "\nChoose an option:" 15 70 7 \
-                       1 "▸ Check Hardware Requirements" \
-                       2 "▸ Install Core Node" \
-                       3 "$([ "$node_installed" = true ] && echo "▸ Log Monitoring Dashboard" || echo "✗ Log Monitoring (Node not installed)")" \
-                       4 "$([ "$node_installed" = true ] && echo "▸ Start/Stop Node" || echo "✗ Start/Stop Node (Node not installed)")" \
-                       5 "$([ "$node_installed" = true ] && echo "▸ View Installation Log" || echo "✗ View Installation Log (Node not installed)")" \
-                       6 "▸ Admin Dashboard" \
-                       7 "▸ Exit" \
-                       2>&1 >/dev/tty) || return 1
+                       1 "Check Hardware Requirements" \
+                       2 "Install/Upgrade Core Node" \
+                       3 "$([ "$node_installed" = true ] && echo "Node Management" || echo "Node Management (Node not installed)")" \
+                       4 "$([ "$node_installed" = true ] && echo "View Logs" || echo "View Logs (Node not installed)")" \
+                       5 "$([ "$node_installed" = true ] && echo "View Node Status" || echo "View Status (Node not installed)")" \
+                       6 "Admin Dashboard" \
+                       7 "Exit" \
+                       2>&1 >/dev/tty) || exit 0
 
         case $choice in
             1)
                 if verify_requirements; then
-                    requirements_met=true
-                    show_success "Hardware requirements verified.\nYou can now proceed with the installation."
-                    
-                    # Prompt user to proceed with installation
+                    show_success "Hardware requirements verified."
                     dialog --colors \
-                           --title " Proceed with Installation? " \
-                           --yesno "\n✓ System requirements met!\n\nWould you like to proceed with the\nCore Node installation now?" 10 45
+                           --title "Proceed with Installation?" \
+                           --backtitle "Core Node Installer" \
+                           --yesno "\nSystem requirements met!\n\nWould you like to proceed with the installation?" 10 50
                     
                     if [ $? -eq 0 ]; then
-                        setup_node || true
+                        setup_node
                     fi
                 fi
                 ;;
             2)
-                if [ "$requirements_met" = true ] || verify_requirements; then
-                    setup_node || true
-                else
-                    show_error "Please verify hardware requirements before installation."
+                if verify_requirements; then
+                    setup_node
                 fi
                 ;;
             3)
-                check_node_installation
                 if [ "$node_installed" = true ]; then
-                    show_log_monitor_menu || true
+                    show_node_management
                 else
-                    dialog --colors \
-                           --title " Action Required " \
-                           --backtitle "Core Node Installer" \
-                           --msgbox "\n  ⚠️  Core Node not installed\n\n  Please install the Core Node first\n  before accessing the log monitor.\n\n  Select 'Install Core Node' from\n  the main menu to proceed." \
-                           12 45
+                    show_error "Node is not installed.\nPlease install the node first."
                 fi
                 ;;
             4)
-                check_node_installation
                 if [ "$node_installed" = true ]; then
-                    manage_node || true
+                    show_log_monitor_menu
                 else
-                    dialog --colors \
-                           --title " Action Required " \
-                           --backtitle "Core Node Installer" \
-                           --msgbox "\n  ⚠️  Core Node not installed\n\n  Please install the Core Node first\n  before managing node operations.\n\n  Select 'Install Core Node' from\n  the main menu to proceed." \
-                           12 45
+                    show_error "Node is not installed.\nPlease install the node first."
                 fi
                 ;;
             5)
-                check_node_installation
                 if [ "$node_installed" = true ]; then
-                    if [ -f "core_installer.log" ]; then
-                        dialog --colors \
-                               --title " Installation Log " \
-                               --backtitle "Core Node Installer" \
-                               --textbox "core_installer.log" 20 70 || true
-                    else
-                        show_error "No installation log found."
-                    fi
+                    show_node_status
                 else
-                    dialog --colors \
-                           --title " Action Required " \
-                           --backtitle "Core Node Installer" \
-                           --msgbox "\n  ⚠️  Core Node not installed\n\n  Please install the Core Node first\n  before viewing the installation log.\n\n  Select 'Install Core Node' from\n  the main menu to proceed." \
-                           12 45
+                    show_error "Node is not installed.\nPlease install the node first."
                 fi
                 ;;
             6)
-                show_admin_dashboard || true
+                show_admin_dashboard
                 ;;
             7)
                 clear
                 show_header "Thank you for using Core Node Installer!"
                 exit 0
                 ;;
-            *)
-                clear
-                exit 1
-                ;;
         esac
     done
 }
 
-manage_node() {
-    if [ ! -f "$INSTALL_DIR/start-node.sh" ]; then
-        dialog --title "Error" \
-               --msgbox "Node is not installed. Please install the node first." 8 50 || return 1
-        return 1
-    fi
-
-    while true; do
-        choice=$(dialog --title "Node Management" \
-                       --menu "Choose an option:" 12 60 3 \
-                       1 "Start Node" \
-                       2 "Stop Node" \
-                       3 "Back to Main Menu" \
-                       2>&1 >/dev/tty) || return 1
-
-        case $choice in
-            1)
-                if pgrep -f "geth.*--networkid 1114" > /dev/null; then
-                    dialog --title "Error" \
-                           --msgbox "Node is already running!" 8 40 || true
-                else
-                    dialog --title "Starting Node" \
-                           --infobox "Starting Core node..." 5 40
-                    "$INSTALL_DIR/start-node.sh" &
-                    sleep 2
-                    dialog --title "Success" \
-                           --msgbox "Node started successfully!" 8 40 || true
-                fi
-                ;;
-            2)
-                if pgrep -f "geth.*--networkid 1114" > /dev/null; then
-                    dialog --title "Stopping Node" \
-                           --infobox "Stopping Core node..." 5 40
-                    pkill -f "geth.*--networkid 1114" || true
-                    sleep 2
-                    dialog --title "Success" \
-                           --msgbox "Node stopped successfully!" 8 40 || true
-                else
-                    dialog --title "Error" \
-                           --msgbox "Node is not running!" 8 40 || true
-                fi
-                ;;
-            3)
-                return 0
-                ;;
-            *)
-                return 1
-                ;;
-        esac
-    done
-}
-
-# Function to show admin dashboard
 show_admin_dashboard() {
     while true; do
         choice=$(dialog --colors \
-                       --title " Admin Dashboard " \
+                       --title "Admin Dashboard" \
                        --backtitle "Core Node Installer" \
+                       --ok-label "Select" \
+                       --cancel-label "Back" \
                        --menu "\nAdmin Operations:" 15 70 6 \
                        1 "Clean Build Core Chain" \
                        2 "Delete Core Chain" \
@@ -326,117 +235,122 @@ show_admin_dashboard() {
                        4 "Repair Installation" \
                        5 "View System Status" \
                        6 "Back to Main Menu" \
-                       2>&1 >/dev/tty) || return 1
+                       2>&1 >/dev/tty) || return 0
 
         case $choice in
             1)
                 dialog --colors \
-                       --title " Confirm Clean Build " \
-                       --yesno "\n⚠️  Warning: This will clean and rebuild the core-chain.\nAll existing build artifacts will be removed.\n\nAre you sure you want to proceed?" 10 60
+                       --title "Confirm Clean Build" \
+                       --backtitle "Core Node Installer" \
+                       --yesno "\nWarning: This will clean and rebuild the core-chain.\nAll existing build artifacts will be removed.\n\nAre you sure?" 10 60
                 if [ $? -eq 0 ]; then
-                    (
-                        cd "$CORE_CHAIN_DIR" && \
-                        make clean && \
-                        build_geth
-                    ) 2>&1 | dialog --programbox "Cleaning and Rebuilding..." 20 70
-                    if [ $? -eq 0 ]; then
-                        show_success "Core chain cleaned and rebuilt successfully!"
-                    else
-                        show_error "Failed to clean and rebuild core chain."
-                    fi
+                    (cd "$CORE_CHAIN_DIR" && make clean && build_geth) 2>&1 | \
+                    dialog --programbox "Cleaning and Rebuilding..." 20 70
                 fi
                 ;;
             2)
                 dialog --colors \
-                       --title " Confirm Delete " \
-                       --yesno "\n⚠️  Warning: This will completely remove the core-chain directory.\nAll data will be lost.\n\nAre you sure you want to proceed?" 10 60
+                       --title "Confirm Delete" \
+                       --backtitle "Core Node Installer" \
+                       --yesno "\nWarning: This will completely remove the core-chain directory.\nAll data will be lost.\n\nAre you sure?" 10 60
                 if [ $? -eq 0 ]; then
                     if rm -rf "$CORE_CHAIN_DIR"; then
                         show_success "Core chain directory deleted successfully!"
-                    else
-                        show_error "Failed to delete core chain directory."
                     fi
                 fi
                 ;;
             3)
                 dialog --colors \
-                       --title " Confirm Reset " \
-                       --yesno "\n⚠️  Warning: This will reset all node configurations to default.\nCustom settings will be lost.\n\nAre you sure you want to proceed?" 10 60
+                       --title "Confirm Reset" \
+                       --backtitle "Core Node Installer" \
+                       --yesno "\nWarning: This will reset all node configurations to default.\nCustom settings will be lost.\n\nAre you sure?" 10 60
                 if [ $? -eq 0 ]; then
                     if [ -f "$NODE_DIR/config.toml" ]; then
                         mv "$NODE_DIR/config.toml" "$NODE_DIR/config.toml.backup"
                     fi
-                    cp "$CORE_CHAIN_DIR/testnet2/config.toml" "$NODE_DIR/config.toml"
+                    cp "$SCRIPT_DIR/config.toml" "$NODE_DIR/config.toml"
                     show_success "Node configuration reset to default!"
                 fi
                 ;;
             4)
-                dialog --colors \
-                       --title " Repair Installation " \
+                repair_installation
+                ;;
+            5)
+                show_system_status
+                ;;
+            6)
+                return 0
+                ;;
+        esac
+    done
+}
+
+repair_installation() {
+    while true; do
+        choice=$(dialog --colors \
+                       --title "Repair Installation" \
+                       --backtitle "Core Node Installer" \
+                       --ok-label "Select" \
+                       --cancel-label "Back" \
                        --menu "\nChoose repair option:" 15 60 4 \
                        1 "Verify Files" \
                        2 "Fix Permissions" \
                        3 "Reinstall Dependencies" \
                        4 "Back" \
-                       2>&1 >/dev/tty || continue
+                       2>&1 >/dev/tty) || return 0
 
-                case $? in
-                    1)
-                        (
-                            cd "$CORE_CHAIN_DIR" && \
-                            git fsck && \
-                            git reset --hard HEAD && \
-                            make clean
-                        ) 2>&1 | dialog --programbox "Verifying files..." 20 70
-                        show_success "File verification complete!"
-                        ;;
-                    2)
-                        (
-                            chmod -R u+rw "$INSTALL_DIR" && \
-                            chmod +x "$INSTALL_DIR/start-node.sh" && \
-                            chmod +x "$CORE_CHAIN_DIR/build/bin/geth"
-                        ) 2>&1 | dialog --programbox "Fixing permissions..." 20 70
-                        show_success "Permissions fixed!"
-                        ;;
-                    3)
-                        install_dependencies
-                        ;;
-                esac
+        case $choice in
+            1)
+                (cd "$CORE_CHAIN_DIR" && \
+                 git fsck && \
+                 git reset --hard HEAD && \
+                 make clean) 2>&1 | \
+                dialog --programbox "Verifying files..." 20 70
+                show_success "File verification complete!"
                 ;;
-            5)
-                # Create temporary file for system status
-                local temp_file=$(mktemp)
-                
-                # Gather system information
-                {
-                    echo "System Status Report"
-                    echo "===================="
-                    echo
-                    echo "Core Chain Version: $(cd "$CORE_CHAIN_DIR" && git describe --tags 2>/dev/null || echo 'N/A')"
-                    echo "Geth Version: $("$CORE_CHAIN_DIR/build/bin/geth" version 2>/dev/null || echo 'N/A')"
-                    echo "Go Version: $(go version 2>/dev/null || echo 'N/A')"
-                    echo
-                    echo "Node Status: $(pgrep -f "geth.*--networkid 1114" > /dev/null && echo 'Running' || echo 'Stopped')"
-                    echo "Installation Directory: $INSTALL_DIR"
-                    echo "Free Disk Space: $(df -h "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
-                    echo
-                    echo "Last Log Entry:"
-                    tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs found"
-                } > "$temp_file"
-
-                dialog --title "System Status" \
-                       --textbox "$temp_file" 20 70
-
-                rm -f "$temp_file"
+            2)
+                (chmod -R u+rw "$INSTALL_DIR" && \
+                 chmod +x "$INSTALL_DIR/start-node.sh" && \
+                 chmod +x "$CORE_CHAIN_DIR/build/bin/geth") 2>&1 | \
+                dialog --programbox "Fixing permissions..." 20 70
+                show_success "Permissions fixed!"
                 ;;
-            6)
+            3)
+                install_dependencies
+                ;;
+            4)
                 return 0
-                ;;
-            *)
-                return 1
                 ;;
         esac
     done
+}
+
+show_system_status() {
+    local temp_file=$(mktemp)
+    
+    {
+        echo "System Status Report"
+        echo "==================="
+        echo
+        echo "Core Chain Version: $(cd "$CORE_CHAIN_DIR" && git describe --tags 2>/dev/null || echo 'N/A')"
+        echo "Geth Version: $("$CORE_CHAIN_DIR/build/bin/geth" version 2>/dev/null || echo 'N/A')"
+        echo "Go Version: $(go version 2>/dev/null || echo 'N/A')"
+        echo
+        echo "Node Status: $(pgrep -f "geth.*--networkid 1114" > /dev/null && echo 'Running' || echo 'Stopped')"
+        echo "Installation Directory: $INSTALL_DIR"
+        echo "Free Disk Space: $(df -h "$INSTALL_DIR" | awk 'NR==2 {print $4}')"
+        echo
+        echo "Last Log Entry:"
+        tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs found"
+    } > "$temp_file"
+
+    dialog --colors \
+           --title "System Status" \
+           --backtitle "Core Node Installer" \
+           --ok-label "Back" \
+           --textbox "$temp_file" 20 70
+
+    rm -f "$temp_file"
 }
 
 # Main execution

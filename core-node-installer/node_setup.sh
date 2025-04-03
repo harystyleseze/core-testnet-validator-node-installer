@@ -388,71 +388,223 @@ start_node() {
     fi
 }
 
+check_node_installed() {
+    if [[ -d "$CORE_CHAIN_DIR" ]] && [[ -f "$CORE_CHAIN_DIR/build/bin/geth" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+show_navigation_buttons() {
+    local title="$1"
+    shift
+    local menu_items=("$@")
+    
+    local options=()
+    local i=1
+    for item in "${menu_items[@]}"; do
+        options+=("$i" "$item")
+        ((i++))
+    done
+    
+    dialog --colors \
+           --title "$title" \
+           --backtitle "Core Node Installer" \
+           --ok-label "Select" \
+           --cancel-label "Back" \
+           --extra-button \
+           --extra-label "Main Menu" \
+           --menu "\nChoose an option:" 15 60 "${#menu_items[@]}" \
+           "${options[@]}" \
+           2>&1 >/dev/tty
+    
+    return $?
+}
+
 show_post_build_menu() {
     while true; do
-        choice=$(dialog --colors \
-                       --title "${PRIMARY}Core Node Setup${NC}" \
-                       --backtitle "Core Node Installer" \
-                       --menu "\nGeth built successfully! Choose next action:" 15 60 4 \
-                       1 "${GREEN}▸ Start Node (Without Snapshot)${NC}" \
-                       2 "${BLUE}▸ Download Snapshot First${NC}" \
-                       3 "${YELLOW}▸ View Node Status${NC}" \
-                       4 "${RED}▸ Exit${NC}" \
-                       2>&1 >/dev/tty) || return 1
-
-        case $choice in
-            1)
-                if initialize_genesis && start_node; then
-                    return 0
-                fi
+        choice=$(show_navigation_buttons "Core Node Setup" \
+            "Start Node (Without Snapshot)" \
+            "Download Snapshot First" \
+            "View Node Status" \
+            "Exit")
+        
+        local ret=$?
+        case $ret in
+            0) # Selected an option
+                case $choice in
+                    1)
+                        if initialize_genesis && start_node; then
+                            return 0
+                        fi
+                        ;;
+                    2)
+                        download_snapshot_with_progress || true
+                        ;;
+                    3)
+                        show_node_status
+                        ;;
+                    4)
+                        return 0
+                        ;;
+                esac
                 ;;
-            2)
-                if download_snapshot && initialize_genesis && start_node; then
-                    return 0
-                fi
+            1) # Back button
+                return 1
                 ;;
-            3)
-                show_node_status
-                ;;
-            4)
-                return 0
+            3) # Main Menu button
+                return 255
                 ;;
         esac
     done
+}
+
+download_snapshot_with_progress() {
+    local pid
+    local temp_file=$(mktemp)
+    
+    (
+        wget -q --show-progress https://snap.coredao.org/coredao-snapshot-testnet-20240327-pruned.tar.lz4 2>&1 | \
+        stdbuf -oL tr '\r' '\n' | grep -o '[0-9]*%' | cut -d'%' -f1 > "$temp_file" &
+        pid=$!
+        
+        while kill -0 $pid 2>/dev/null; do
+            local progress=$(tail -n 1 "$temp_file" 2>/dev/null || echo "0")
+            echo "XXX"
+            echo "$progress"
+            echo "Downloading snapshot... ($progress%)\n\nPress ESC to cancel"
+            echo "XXX"
+            sleep 1
+        done
+    ) | dialog --colors \
+               --title "Downloading Snapshot" \
+               --backtitle "Core Node Installer" \
+               --gauge "" 10 70 0 \
+               --cancel-label "Cancel" \
+               2>&1
+    
+    if [ $? -eq 1 ]; then
+        pkill -P $pid wget 2>/dev/null
+        rm -f "$temp_file"
+        show_error "Download cancelled by user"
+        return 1
+    fi
+    
+    rm -f "$temp_file"
+    return 0
 }
 
 show_node_status() {
     local temp_file=$(mktemp)
     
     {
-        echo -e "${PRIMARY}${BOLD}Core Node Status${NC}"
-        echo -e "${PRIMARY}${BOLD}================${NC}"
+        echo "Core Node Status"
+        echo "================"
         echo
         if pgrep -f "geth.*--networkid 1114" > /dev/null; then
-            echo -e "${GREEN}Node Status: Running${NC}"
-            echo -e "${GREEN}Process ID: $(pgrep -f "geth.*--networkid 1114")${NC}"
+            echo "Node Status: Running"
+            echo "Process ID: $(pgrep -f "geth.*--networkid 1114")"
         else
-            echo -e "${RED}Node Status: Not Running${NC}"
+            echo "Node Status: Not Running"
         fi
         echo
-        echo -e "${BLUE}Installation Directory: $INSTALL_DIR${NC}"
-        echo -e "${BLUE}Data Directory: $NODE_DIR${NC}"
-        echo -e "${BLUE}Log File: $NODE_DIR/logs/core.log${NC}"
+        echo "Installation Directory: $INSTALL_DIR"
+        echo "Data Directory: $NODE_DIR"
+        echo "Log File: $NODE_DIR/logs/core.log"
         echo
-        echo -e "${YELLOW}Last 5 Log Entries:${NC}"
-        echo -e "${YELLOW}-------------------${NC}"
+        echo "Last 5 Log Entries:"
+        echo "-------------------"
         tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs available yet"
     } > "$temp_file"
 
     dialog --colors \
-           --title "${PRIMARY}Node Status${NC}" \
+           --title "Node Status" \
            --backtitle "Core Node Installer" \
+           --ok-label "Back" \
+           --extra-button \
+           --extra-label "Main Menu" \
            --textbox "$temp_file" 20 70
 
+    local ret=$?
     rm -f "$temp_file"
+    return $ret
+}
+
+show_node_management() {
+    while true; do
+        local node_status="Stopped"
+        if pgrep -f "geth.*--networkid 1114" > /dev/null; then
+            node_status="Running"
+        fi
+        
+        choice=$(show_navigation_buttons "Node Management" \
+            "Start Node" \
+            "Stop Node" \
+            "View Logs" \
+            "View Node Status" \
+            "Back to Main Menu")
+        
+        local ret=$?
+        case $ret in
+            0) # Selected an option
+                case $choice in
+                    1)
+                        if [ "$node_status" = "Running" ]; then
+                            show_error "Node is already running!"
+                        else
+                            start_node
+                        fi
+                        ;;
+                    2)
+                        if [ "$node_status" = "Stopped" ]; then
+                            show_error "Node is not running!"
+                        else
+                            stop_node
+                        fi
+                        ;;
+                    3)
+                        show_log_monitor_menu
+                        ;;
+                    4)
+                        show_node_status
+                        ;;
+                    5)
+                        return 0
+                        ;;
+                esac
+                ;;
+            1) # Back button
+                return 1
+                ;;
+            3) # Main Menu button
+                return 0
+                ;;
+        esac
+    done
+}
+
+stop_node() {
+    show_progress "Stopping Core node..."
+    if pkill -f "geth.*--networkid 1114"; then
+        show_success "Node stopped successfully!"
+    else
+        show_error "Failed to stop node"
+    fi
 }
 
 setup_node() {
+    # Check if node is already installed
+    if check_node_installed; then
+        dialog --colors \
+               --title "Node Already Installed" \
+               --backtitle "Core Node Installer" \
+               --yesno "\nCore node is already installed.\n\nWould you like to upgrade it?" 10 50
+        
+        if [ $? -ne 0 ]; then
+            return 0
+        fi
+    fi
+
     # Main installation steps
     local steps=(
         "Installing Dependencies" "install_dependencies"
@@ -468,8 +620,10 @@ setup_node() {
         local step_name="${steps[i]}"
         local step_function="${steps[i+1]}"
 
-        dialog --title "Core Node Setup ($current_step/$total_steps)" \
-               --infobox "Step $current_step: $step_name" 5 70
+        dialog --colors \
+               --title "Core Node Setup ($current_step/$total_steps)" \
+               --backtitle "Core Node Installer" \
+               --infobox "\nStep $current_step: $step_name" 5 70
         sleep 2
 
         if ! $step_function; then
@@ -480,9 +634,12 @@ setup_node() {
         ((current_step++))
     done
 
-    # Show post-build menu
     show_post_build_menu
-    return $?
+    local ret=$?
+    if [ $ret -eq 255 ]; then
+        return 255  # Return to main menu
+    fi
+    return $ret
 }
 
 # Run setup if script is run directly
