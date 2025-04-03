@@ -1,12 +1,42 @@
 #!/bin/bash
 
-# Source utils
-source ./utils.sh
+# Exit on error
+set -e
 
-# Installation directory
+# Error handling
+trap 'handle_error $? $LINENO $BASH_LINENO "$BASH_COMMAND" $(printf "::%s" ${FUNCNAME[@]:-})' ERR
+
+# Check if running in correct directory
+if [[ ! -f "$(dirname "$0")/utils.sh" ]]; then
+    echo "Error: Required files not found. Please run this script from the core-node-installer directory."
+    exit 1
+fi
+
+# Source utils first to get access to functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/utils.sh" || { echo "Error loading utils.sh"; exit 1; }
+
+# Installation directories
 INSTALL_DIR="$HOME/core-node"
 CORE_CHAIN_DIR="$INSTALL_DIR/core-chain"
 NODE_DIR="$CORE_CHAIN_DIR/node"
+
+handle_error() {
+    local exit_code=$1
+    local line_no=$2
+    local bash_lineno=$3
+    local last_command=$4
+    local func_trace=$5
+
+    log_message "Error occurred in node_setup.sh" "error"
+    log_message "Exit code: $exit_code" "error"
+    log_message "Line number: $line_no" "error"
+    log_message "Command: $last_command" "error"
+    log_message "Function trace: $func_trace" "error"
+
+    show_error "An error occurred while setting up the node.\nPlease check the logs for details."
+    return "$exit_code"
+}
 
 install_dependencies() {
     log_message "Installing dependencies"
@@ -232,12 +262,18 @@ setup_node_directory() {
     show_progress "Setting up node directory..."
     
     mkdir -p "$NODE_DIR/logs"
+    mkdir -p "$CORE_CHAIN_DIR/testnet2"
     
-    # Copy local config files instead of downloading
-    cp "$(dirname "$0")/config.toml" "$CORE_CHAIN_DIR/testnet2/config.toml"
-    cp "$(dirname "$0")/genesis.json" "$CORE_CHAIN_DIR/testnet2/genesis.json"
+    # Copy local config files
+    if [[ ! -f "$SCRIPT_DIR/config.toml" ]] || [[ ! -f "$SCRIPT_DIR/genesis.json" ]]; then
+        show_error "Required config files not found.\nPlease ensure config.toml and genesis.json are present."
+        return 1
+    fi
 
-    check_status "Node directory setup completed!" "Failed to setup node directory"
+    cp "$SCRIPT_DIR/config.toml" "$CORE_CHAIN_DIR/testnet2/config.toml"
+    cp "$SCRIPT_DIR/genesis.json" "$CORE_CHAIN_DIR/testnet2/genesis.json"
+
+    show_status "Node directory setup completed!" "success"
 }
 
 download_snapshot() {
@@ -308,20 +344,20 @@ start_node() {
     if pgrep -f "geth.*--networkid 1114" > /dev/null; then
         show_error "Node is already running!"
         return 1
-    }
+    fi
 
     # Create logs directory if it doesn't exist
     mkdir -p "$NODE_DIR/logs"
 
     # Start the node in the background
     cd "$CORE_CHAIN_DIR"
-    ./build/bin/geth --config ./testnet2/config.toml \
-                     --datadir ./node \
-                     --cache 8000 \
-                     --rpc.allow-unprotected-txs \
-                     --networkid 1114 \
-                     --verbosity 4 \
-                     2>&1 | tee "$NODE_DIR/logs/core.log" &
+    nohup ./build/bin/geth --config ./testnet2/config.toml \
+                          --datadir ./node \
+                          --cache 8000 \
+                          --rpc.allow-unprotected-txs \
+                          --networkid 1114 \
+                          --verbosity 4 \
+                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
 
     # Wait a moment for the process to start
     sleep 5
@@ -338,25 +374,30 @@ start_node() {
     show_success "Node started successfully!\n\nTo view logs, run:\ntail -f $log_file"
     
     # Ask if user wants to view logs
-    dialog --title "View Logs" \
+    dialog --colors \
+           --title "${PRIMARY}View Logs${NC}" \
            --yesno "\nWould you like to view the node logs now?" 7 50
     
     if [ $? -eq 0 ]; then
         # Show logs in a scrollable dialog
         tail -f "$log_file" 2>/dev/null | \
-        dialog --title "Core Node Logs (Press Ctrl+C to exit)" \
-               --programbox 20 120
+        dialog --colors \
+               --title "${PRIMARY}Core Node Logs${NC}" \
+               --backtitle "Core Node Installer" \
+               --programbox "Press Ctrl+C to exit" 20 120
     fi
 }
 
 show_post_build_menu() {
     while true; do
-        choice=$(dialog --title "Core Node Setup" \
+        choice=$(dialog --colors \
+                       --title "${PRIMARY}Core Node Setup${NC}" \
+                       --backtitle "Core Node Installer" \
                        --menu "\nGeth built successfully! Choose next action:" 15 60 4 \
-                       1 "Start Node (Without Snapshot)" \
-                       2 "Download Snapshot First" \
-                       3 "View Node Status" \
-                       4 "Exit" \
+                       1 "${GREEN}▸ Start Node (Without Snapshot)${NC}" \
+                       2 "${BLUE}▸ Download Snapshot First${NC}" \
+                       3 "${YELLOW}▸ View Node Status${NC}" \
+                       4 "${RED}▸ Exit${NC}" \
                        2>&1 >/dev/tty) || return 1
 
         case $choice in
@@ -381,30 +422,31 @@ show_post_build_menu() {
 }
 
 show_node_status() {
-    # Create temporary file for status info
     local temp_file=$(mktemp)
     
     {
-        echo "Core Node Status"
-        echo "================"
+        echo -e "${PRIMARY}${BOLD}Core Node Status${NC}"
+        echo -e "${PRIMARY}${BOLD}================${NC}"
         echo
         if pgrep -f "geth.*--networkid 1114" > /dev/null; then
-            echo "Node Status: Running"
-            echo "Process ID: $(pgrep -f "geth.*--networkid 1114")"
+            echo -e "${GREEN}Node Status: Running${NC}"
+            echo -e "${GREEN}Process ID: $(pgrep -f "geth.*--networkid 1114")${NC}"
         else
-            echo "Node Status: Not Running"
+            echo -e "${RED}Node Status: Not Running${NC}"
         fi
         echo
-        echo "Installation Directory: $INSTALL_DIR"
-        echo "Data Directory: $NODE_DIR"
-        echo "Log File: $NODE_DIR/logs/core.log"
+        echo -e "${BLUE}Installation Directory: $INSTALL_DIR${NC}"
+        echo -e "${BLUE}Data Directory: $NODE_DIR${NC}"
+        echo -e "${BLUE}Log File: $NODE_DIR/logs/core.log${NC}"
         echo
-        echo "Last 5 Log Entries:"
-        echo "-------------------"
+        echo -e "${YELLOW}Last 5 Log Entries:${NC}"
+        echo -e "${YELLOW}-------------------${NC}"
         tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs available yet"
     } > "$temp_file"
 
-    dialog --title "Node Status" \
+    dialog --colors \
+           --title "${PRIMARY}Node Status${NC}" \
+           --backtitle "Core Node Installer" \
            --textbox "$temp_file" 20 70
 
     rm -f "$temp_file"
@@ -445,6 +487,9 @@ setup_node() {
 
 # Run setup if script is run directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    check_dialog
+    if ! check_dialog; then
+        show_error "Dialog is required but not installed.\nPlease install dialog to continue."
+        exit 1
+    fi
     setup_node
 fi
