@@ -376,16 +376,137 @@ start_node() {
     # Ask if user wants to view logs
     dialog --colors \
            --title "${PRIMARY}View Logs${NC}" \
+           --yes-label "View Logs" \
+           --no-label "Back" \
            --yesno "\nWould you like to view the node logs now?" 7 50
     
-    if [ $? -eq 0 ]; then
-        # Show logs in a scrollable dialog
-        tail -f "$log_file" 2>/dev/null | \
-        dialog --colors \
-               --title "${PRIMARY}Core Node Logs${NC}" \
-               --backtitle "Core Node Installer" \
-               --programbox "Press Ctrl+C to exit" 20 120
+    case $? in
+        0) # View logs
+            show_live_logs
+            ;;
+        1) # Back to menu
+            return 0
+            ;;
+    esac
+}
+
+show_live_logs() {
+    dialog --colors \
+           --title "${PRIMARY}Live Logs${NC}" \
+           --backtitle "Core Node Installer" \
+           --tailbox "/var/log/core-node.log" 30 100
+}
+
+show_last_50_lines() {
+    local log_content
+    log_content=$(tail -n 50 /var/log/core-node.log | sed 's/^[0-9]\+|//g')
+    dialog --colors \
+           --title "${PRIMARY}Last 50 Log Lines${NC}" \
+           --backtitle "Core Node Installer" \
+           --msgbox "$log_content" 30 100
+}
+
+show_error_logs() {
+    local error_logs
+    error_logs=$(grep -i "error\|failed\|fatal" /var/log/core-node.log | tail -n 50 | sed 's/^[0-9]\+|//g')
+    if [ -z "$error_logs" ]; then
+        error_logs="No errors found in the logs."
     fi
+    dialog --colors \
+           --title "${PRIMARY}Error Logs${NC}" \
+           --backtitle "Core Node Installer" \
+           --msgbox "$error_logs" 30 100
+}
+
+show_log_monitor_menu() {
+    while true; do
+        local choice
+        choice=$(dialog --colors \
+                       --title "${PRIMARY}Log Monitor${NC}" \
+                       --backtitle "Core Node Installer" \
+                       --cancel-label "Back" \
+                       --menu "\nSelect a log viewing option:" 15 60 4 \
+                       1 "View Live Logs" \
+                       2 "View Last 50 Lines" \
+                       3 "View Error Logs" \
+                       2>&1 >/dev/tty)
+
+        case $? in
+            0) # User selected an option
+                case $choice in
+                    1) show_live_logs ;;
+                    2) show_last_50_lines ;;
+                    3) show_error_logs ;;
+                esac
+                ;;
+            1) # Back
+                return 0
+                ;;
+        esac
+    done
+}
+
+show_log_history() {
+    local lines=$1
+    local log_file="$NODE_DIR/logs/core.log"
+    local temp_file=$(mktemp)
+    
+    {
+        echo "Last $lines Lines of Node Logs"
+        echo "=========================="
+        echo
+        tail -n "$lines" "$log_file" 2>/dev/null || echo "No logs available yet"
+    } > "$temp_file"
+
+    dialog --colors \
+           --title "Log History" \
+           --backtitle "Core Node Installer" \
+           --ok-label "Back" \
+           --extra-button \
+           --extra-label "Main Menu" \
+           --textbox "$temp_file" 20 120
+
+    rm -f "$temp_file"
+    
+    case $? in
+        0) # Back button
+            return 1
+            ;;
+        3) # Main Menu button
+            return 255
+            ;;
+    esac
+}
+
+show_error_logs() {
+    local log_file="$NODE_DIR/logs/core.log"
+    local temp_file=$(mktemp)
+    
+    {
+        echo "Error Logs"
+        echo "=========="
+        echo
+        grep -i "error\|failed\|fatal" "$log_file" 2>/dev/null || echo "No error logs found"
+    } > "$temp_file"
+
+    dialog --colors \
+           --title "Error Logs" \
+           --backtitle "Core Node Installer" \
+           --ok-label "Back" \
+           --extra-button \
+           --extra-label "Main Menu" \
+           --textbox "$temp_file" 20 120
+
+    rm -f "$temp_file"
+    
+    case $? in
+        0) # Back button
+            return 1
+            ;;
+        3) # Main Menu button
+            return 255
+            ;;
+    esac
 }
 
 check_node_installed() {
@@ -424,7 +545,7 @@ show_navigation_buttons() {
 show_post_build_menu() {
     while true; do
         choice=$(show_navigation_buttons "Core Node Setup" \
-            "Start Node (Without Consensus)" \
+            "Start Node" \
             "Start Node with Consensus Key" \
             "Generate Consensus Key" \
             "View Consensus Key" \
@@ -531,17 +652,25 @@ show_node_status() {
         tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs available yet"
     } > "$temp_file"
 
-    dialog --colors \
+    local choice
+    choice=$(dialog --colors \
            --title "Node Status" \
            --backtitle "Core Node Installer" \
            --ok-label "Back" \
            --extra-button \
            --extra-label "Main Menu" \
-           --textbox "$temp_file" 20 70
+           --textbox "$temp_file" 20 70)
 
-    local ret=$?
     rm -f "$temp_file"
-    return $ret
+    
+    case $? in
+        0) # Back button
+            return 1
+            ;;
+        3) # Main Menu button
+            return 255
+            ;;
+    esac
 }
 
 show_node_management() {
@@ -844,3 +973,82 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     fi
     setup_node
 fi
+
+get_validator_address() {
+    local address=""
+    local temp_file=$(mktemp)
+    
+    while true; do
+        dialog --colors \
+               --title "${PRIMARY}Validator Address${NC}" \
+               --backtitle "Core Node Installer" \
+               --ok-label "Continue" \
+               --cancel-label "Back" \
+               --extra-button \
+               --extra-label "Main Menu" \
+               --inputbox "\nEnter your validator address:\n\nTip: Use Ctrl+V or right-click to paste" 12 60 "$address" 2>"$temp_file"
+
+        case $? in
+            0) # Continue
+                address=$(cat "$temp_file")
+                # Validate address format
+                if [[ "$address" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
+                    rm -f "$temp_file"
+                    echo "$address"
+                    return 0
+                else
+                    dialog --colors \
+                           --title "${ERROR}Invalid Address${NC}" \
+                           --msgbox "\nPlease enter a valid Ethereum address (0x followed by 40 hexadecimal characters)" 8 60
+                    continue
+                fi
+                ;;
+            1) # Back
+                rm -f "$temp_file"
+                return 1
+                ;;
+            3) # Main Menu
+                rm -f "$temp_file"
+                return 255
+                ;;
+        esac
+    done
+}
+
+show_main_menu() {
+    while true; do
+        local choice
+        choice=$(dialog --colors \
+                       --title "${PRIMARY}Core Node Installer${NC}" \
+                       --backtitle "Core Node Installer" \
+                       --cancel-label "Exit" \
+                       --menu "\nSelect an option:" 15 60 8 \
+                       1 "Start Node" \
+                       2 "Stop Node" \
+                       3 "Monitor Logs" \
+                       4 "Node Status" \
+                       5 "Update Node" \
+                       6 "Configure Node" \
+                       7 "Uninstall Node" \
+                       2>&1 >/dev/tty)
+
+        case $? in
+            0) # User selected an option
+                case $choice in
+                    1) start_node ;;
+                    2) stop_node ;;
+                    3) show_log_monitor_menu ;;
+                    4) show_node_status ;;
+                    5) update_node ;;
+                    6) configure_node ;;
+                    7) uninstall_node ;;
+                esac
+                ;;
+            1) # Exit
+                clear
+                echo "Thank you for using Core Node Installer!"
+                exit 0
+                ;;
+        esac
+    done
+}
