@@ -757,46 +757,99 @@ generate_consensus_key() {
         return 1
     fi
 
-    # Get password from user
-    local password
-    password=$(dialog --colors \
-                     --title "Create Consensus Key" \
-                     --backtitle "Core Node Installer" \
-                     --insecure \
-                     --passwordbox "\nEnter password for consensus key:" 10 50 \
-                     2>&1 >/dev/tty) || return 1
+    # Get password from user with validation
+    local password=""
+    local confirm_password=""
+    local valid_password=false
 
-    # Confirm password
-    local confirm_password
-    confirm_password=$(dialog --colors \
-                            --title "Create Consensus Key" \
-                            --backtitle "Core Node Installer" \
-                            --insecure \
-                            --passwordbox "\nConfirm password:" 10 50 \
-                            2>&1 >/dev/tty) || return 1
+    while [ "$valid_password" = false ]; do
+        password=$(dialog --colors \
+                         --title "${PRIMARY}Create Consensus Key${NC}" \
+                         --backtitle "Core Node Installer" \
+                         --insecure \
+                         --passwordbox "\nEnter a strong password for your consensus key:\n\n- Minimum 8 characters\n- At least one number\n- At least one special character" \
+                         15 60 \
+                         2>&1 >/dev/tty) || return 1
 
-    if [ "$password" != "$confirm_password" ]; then
-        show_error "Passwords do not match!"
-        return 1
-    fi
+        # Validate password strength
+        if [ ${#password} -lt 8 ]; then
+            dialog --colors \
+                   --title "${ERROR}Invalid Password${NC}" \
+                   --msgbox "\nPassword must be at least 8 characters long." 8 50
+            continue
+        fi
 
-    # Save password to file
+        confirm_password=$(dialog --colors \
+                                --title "${PRIMARY}Confirm Password${NC}" \
+                                --backtitle "Core Node Installer" \
+                                --insecure \
+                                --passwordbox "\nConfirm your password:" 8 50 \
+                                2>&1 >/dev/tty) || return 1
+
+        if [ "$password" != "$confirm_password" ]; then
+            dialog --colors \
+                   --title "${ERROR}Password Mismatch${NC}" \
+                   --msgbox "\nPasswords do not match. Please try again." 8 50
+            continue
+        fi
+
+        valid_password=true
+    done
+
+    # Save password to file securely
     echo "$password" > "$NODE_DIR/password.txt"
     chmod 600 "$NODE_DIR/password.txt"
 
+    # Show progress during key generation
+    dialog --colors \
+           --title "${PRIMARY}Generating Consensus Key${NC}" \
+           --backtitle "Core Node Installer" \
+           --infobox "\nGenerating your consensus key...\nThis may take a moment." 6 50
+    
     # Generate consensus key
     cd "$CORE_CHAIN_DIR"
     local output
-    output=$(./build/bin/geth account new --datadir ./node 2>&1)
+    output=$(./build/bin/geth account new --datadir ./node --password "$NODE_DIR/password.txt" 2>&1)
     local address
     address=$(echo "$output" | grep -o "0x[0-9a-fA-F]\{40\}")
 
     if [ -n "$address" ]; then
-        show_success "Consensus key generated successfully!\n\nValidator Address: $address\n\nPlease save this address for future use."
+        # Save address to file
         echo "$address" > "$NODE_DIR/validator_address.txt"
-        return 0
+        chmod 600 "$NODE_DIR/validator_address.txt"
+
+        # Show success message with options
+        while true; do
+            local choice
+            choice=$(dialog --colors \
+                           --title "${PRIMARY}Consensus Key Generated${NC}" \
+                           --backtitle "Core Node Installer" \
+                           --ok-label "Select" \
+                           --cancel-label "Back" \
+                           --menu "\nConsensus key generated successfully!\n\nValidator Address: $address\n\nWhat would you like to do next?" \
+                           17 70 4 \
+                           1 "View Key Details" \
+                           2 "Start Node with This Key" \
+                           3 "Go to Node Management" \
+                           4 "Go to Main Menu" \
+                           2>&1 >/dev/tty)
+
+            case $? in
+                0) # User selected an option
+                    case $choice in
+                        1) view_consensus_key ;;
+                        2) start_node_with_consensus ;;
+                        3) show_node_management; return $? ;;
+                        4) return 255 ;; # Return to main menu
+                    esac
+                    ;;
+                1) # Back
+                    return 0
+                    ;;
+            esac
+        done
     else
-        show_error "Failed to generate consensus key"
+        show_error "Failed to generate consensus key.\nError: $output"
         return 1
     fi
 }
@@ -808,20 +861,56 @@ view_consensus_key() {
     fi
 
     cd "$CORE_CHAIN_DIR"
-    local output
-    output=$(./build/bin/geth account list --datadir ./node 2>&1)
     
+    # Get list of accounts
+    local accounts_output
+    accounts_output=$(./build/bin/geth account list --datadir ./node 2>&1)
+    
+    # Get saved validator address
+    local saved_address=""
     if [ -f "$NODE_DIR/validator_address.txt" ]; then
-        local saved_address
         saved_address=$(cat "$NODE_DIR/validator_address.txt")
-        output+="\n\nSaved Validator Address: $saved_address"
     fi
+    
+    # Create detailed output
+    local output="Consensus Key Information\n"
+    output+="========================\n\n"
+    output+="Available Accounts:\n$accounts_output\n"
+    
+    if [ -n "$saved_address" ]; then
+        output+="\nActive Validator Address:\n$saved_address"
+    fi
+    
+    # Show key information with options
+    while true; do
+        local choice
+        choice=$(dialog --colors \
+                       --title "${PRIMARY}Consensus Key Details${NC}" \
+                       --backtitle "Core Node Installer" \
+                       --ok-label "Select" \
+                       --cancel-label "Back" \
+                       --menu "\n$output\n\nWhat would you like to do next?" \
+                       20 70 4 \
+                       1 "Generate New Key" \
+                       2 "Start Node with This Key" \
+                       3 "Go to Node Management" \
+                       4 "Go to Main Menu" \
+                       2>&1 >/dev/tty)
 
-    dialog --colors \
-           --title "Consensus Key Information" \
-           --backtitle "Core Node Installer" \
-           --ok-label "Back" \
-           --msgbox "\n$output" 15 70
+        case $? in
+            0) # User selected an option
+                case $choice in
+                    1) generate_consensus_key; return $? ;;
+                    2) start_node_with_consensus ;;
+                    3) show_node_management; return $? ;;
+                    4) return 255 ;; # Return to main menu
+                esac
+                ;;
+            1) # Back
+                return 0
+                ;;
+        esac
+    done
 }
 
 start_node_with_consensus() {
