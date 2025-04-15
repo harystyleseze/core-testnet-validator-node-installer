@@ -228,17 +228,21 @@ show_admin_dashboard() {
                        --backtitle "Core Node Installer" \
                        --ok-label "Select" \
                        --cancel-label "Back" \
-                       --menu "\nAdmin Operations:" 15 70 6 \
-                       1 "Clean Build Core Chain" \
-                       2 "Delete Core Chain" \
-                       3 "Reset Node Configuration" \
-                       4 "Repair Installation" \
-                       5 "View System Status" \
-                       6 "Back to Main Menu" \
+                       --menu "\nAdmin Operations:" 15 70 8 \
+                       1 "Consensus Key Management" \
+                       2 "Clean Build Core Chain" \
+                       3 "Delete Core Chain" \
+                       4 "Reset Node Configuration" \
+                       5 "Repair Installation" \
+                       6 "View System Status" \
+                       7 "Back to Main Menu" \
                        2>&1 >/dev/tty) || return 0
 
         case $choice in
             1)
+                show_consensus_management
+                ;;
+            2)
                 dialog --colors \
                        --title "Confirm Clean Build" \
                        --backtitle "Core Node Installer" \
@@ -248,7 +252,7 @@ show_admin_dashboard() {
                     dialog --programbox "Cleaning and Rebuilding..." 20 70
                 fi
                 ;;
-            2)
+            3)
                 dialog --colors \
                        --title "Confirm Delete" \
                        --backtitle "Core Node Installer" \
@@ -259,7 +263,7 @@ show_admin_dashboard() {
                     fi
                 fi
                 ;;
-            3)
+            4)
                 dialog --colors \
                        --title "Confirm Reset" \
                        --backtitle "Core Node Installer" \
@@ -272,13 +276,13 @@ show_admin_dashboard() {
                     show_success "Node configuration reset to default!"
                 fi
                 ;;
-            4)
+            5)
                 repair_installation
                 ;;
-            5)
+            6)
                 show_system_status
                 ;;
-            6)
+            7)
                 return 0
                 ;;
         esac

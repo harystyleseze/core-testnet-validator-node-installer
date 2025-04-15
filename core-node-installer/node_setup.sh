@@ -424,10 +424,13 @@ show_navigation_buttons() {
 show_post_build_menu() {
     while true; do
         choice=$(show_navigation_buttons "Core Node Setup" \
-            "Start Node (Without Snapshot)" \
-            "Download Snapshot First" \
+            "Start Node (Without Consensus)" \
+            "Start Node with Consensus Key" \
+            "Generate Consensus Key" \
+            "View Consensus Key" \
+            "Download Snapshot" \
             "View Node Status" \
-            "Exit")
+            "Back to Main Menu")
         
         local ret=$?
         case $ret in
@@ -439,12 +442,23 @@ show_post_build_menu() {
                         fi
                         ;;
                     2)
-                        download_snapshot_with_progress || true
+                        if initialize_genesis && start_node_with_consensus; then
+                            return 0
+                        fi
                         ;;
                     3)
-                        show_node_status
+                        generate_consensus_key
                         ;;
                     4)
+                        view_consensus_key
+                        ;;
+                    5)
+                        download_snapshot_with_progress || true
+                        ;;
+                    6)
+                        show_node_status
+                        ;;
+                    7)
                         return 0
                         ;;
                 esac
@@ -538,8 +552,11 @@ show_node_management() {
         fi
         
         choice=$(show_navigation_buttons "Node Management" \
-            "Start Node" \
+            "Start Node (Without Consensus)" \
+            "Start Node with Consensus Key" \
             "Stop Node" \
+            "Generate Consensus Key" \
+            "View Consensus Key" \
             "View Logs" \
             "View Node Status" \
             "Back to Main Menu")
@@ -556,19 +573,32 @@ show_node_management() {
                         fi
                         ;;
                     2)
+                        if [ "$node_status" = "Running" ]; then
+                            show_error "Node is already running!"
+                        else
+                            start_node_with_consensus
+                        fi
+                        ;;
+                    3)
                         if [ "$node_status" = "Stopped" ]; then
                             show_error "Node is not running!"
                         else
                             stop_node
                         fi
                         ;;
-                    3)
-                        show_log_monitor_menu
-                        ;;
                     4)
-                        show_node_status
+                        generate_consensus_key
                         ;;
                     5)
+                        view_consensus_key
+                        ;;
+                    6)
+                        show_log_monitor_menu
+                        ;;
+                    7)
+                        show_node_status
+                        ;;
+                    8)
                         return 0
                         ;;
                 esac
@@ -590,6 +620,170 @@ stop_node() {
     else
         show_error "Failed to stop node"
     fi
+}
+
+generate_consensus_key() {
+    if ! check_node_installed; then
+        show_error "Node is not installed.\nPlease install the node first."
+        return 1
+    fi
+
+    # Get password from user
+    local password
+    password=$(dialog --colors \
+                     --title "Create Consensus Key" \
+                     --backtitle "Core Node Installer" \
+                     --insecure \
+                     --passwordbox "\nEnter password for consensus key:" 10 50 \
+                     2>&1 >/dev/tty) || return 1
+
+    # Confirm password
+    local confirm_password
+    confirm_password=$(dialog --colors \
+                            --title "Create Consensus Key" \
+                            --backtitle "Core Node Installer" \
+                            --insecure \
+                            --passwordbox "\nConfirm password:" 10 50 \
+                            2>&1 >/dev/tty) || return 1
+
+    if [ "$password" != "$confirm_password" ]; then
+        show_error "Passwords do not match!"
+        return 1
+    fi
+
+    # Save password to file
+    echo "$password" > "$NODE_DIR/password.txt"
+    chmod 600 "$NODE_DIR/password.txt"
+
+    # Generate consensus key
+    cd "$CORE_CHAIN_DIR"
+    local output
+    output=$(./build/bin/geth account new --datadir ./node 2>&1)
+    local address
+    address=$(echo "$output" | grep -o "0x[0-9a-fA-F]\{40\}")
+
+    if [ -n "$address" ]; then
+        show_success "Consensus key generated successfully!\n\nValidator Address: $address\n\nPlease save this address for future use."
+        echo "$address" > "$NODE_DIR/validator_address.txt"
+        return 0
+    else
+        show_error "Failed to generate consensus key"
+        return 1
+    fi
+}
+
+view_consensus_key() {
+    if ! check_node_installed; then
+        show_error "Node is not installed.\nPlease install the node first."
+        return 1
+    fi
+
+    cd "$CORE_CHAIN_DIR"
+    local output
+    output=$(./build/bin/geth account list --datadir ./node 2>&1)
+    
+    if [ -f "$NODE_DIR/validator_address.txt" ]; then
+        local saved_address
+        saved_address=$(cat "$NODE_DIR/validator_address.txt")
+        output+="\n\nSaved Validator Address: $saved_address"
+    fi
+
+    dialog --colors \
+           --title "Consensus Key Information" \
+           --backtitle "Core Node Installer" \
+           --ok-label "Back" \
+           --msgbox "\n$output" 15 70
+}
+
+start_node_with_consensus() {
+    if ! check_node_installed; then
+        show_error "Node is not installed.\nPlease install the node first."
+        return 1
+    fi
+
+    local validator_address
+    if [ -f "$NODE_DIR/validator_address.txt" ]; then
+        validator_address=$(cat "$NODE_DIR/validator_address.txt")
+    fi
+
+    # Get validator address from user
+    validator_address=$(dialog --colors \
+                              --title "Start Node with Consensus Key" \
+                              --backtitle "Core Node Installer" \
+                              --inputbox "\nEnter validator address (0x...):\n[Press Enter to use saved: ${validator_address:-none}]" 10 60 "$validator_address" \
+                              2>&1 >/dev/tty) || return 1
+
+    if [ -z "$validator_address" ]; then
+        show_error "Validator address is required"
+        return 1
+    fi
+
+    # Verify password exists
+    if [ ! -f "$NODE_DIR/password.txt" ]; then
+        local password
+        password=$(dialog --colors \
+                         --title "Start Node with Consensus Key" \
+                         --backtitle "Core Node Installer" \
+                         --insecure \
+                         --passwordbox "\nEnter password for consensus key:" 10 50 \
+                         2>&1 >/dev/tty) || return 1
+
+        echo "$password" > "$NODE_DIR/password.txt"
+        chmod 600 "$NODE_DIR/password.txt"
+    fi
+
+    # Start node with consensus key
+    cd "$CORE_CHAIN_DIR"
+    nohup ./build/bin/geth --config ./testnet2/config.toml \
+                          --datadir ./node \
+                          --unlock "$validator_address" \
+                          --miner.etherbase "$validator_address" \
+                          --password password.txt \
+                          --mine \
+                          --allow-insecure-unlock \
+                          --cache 8000 \
+                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
+
+    # Wait for node to start
+    sleep 5
+    if pgrep -f "geth.*--mine" > /dev/null; then
+        show_success "Node started successfully with consensus key!"
+        return 0
+    else
+        show_error "Failed to start node with consensus key"
+        return 1
+    fi
+}
+
+show_consensus_management() {
+    while true; do
+        choice=$(dialog --colors \
+                       --title "Consensus Key Management" \
+                       --backtitle "Core Node Installer" \
+                       --ok-label "Select" \
+                       --cancel-label "Back" \
+                       --menu "\nManage consensus key:" 15 60 4 \
+                       1 "Generate New Consensus Key" \
+                       2 "View Consensus Key" \
+                       3 "Start Node with Consensus Key" \
+                       4 "Back" \
+                       2>&1 >/dev/tty) || return 1
+
+        case $choice in
+            1)
+                generate_consensus_key
+                ;;
+            2)
+                view_consensus_key
+                ;;
+            3)
+                start_node_with_consensus
+                ;;
+            4)
+                return 0
+                ;;
+        esac
+    done
 }
 
 setup_node() {
