@@ -336,70 +336,34 @@ EOF
     show_success "Startup script created at $INSTALL_DIR/start-node.sh"
 }
 
-start_node() {
-    log_message "Starting Core node"
-    show_progress "Starting Core node..."
-    
-    # Check if node is already running
-    if pgrep -f "geth.*--networkid 1114" > /dev/null; then
-        show_error "Node is already running!"
-        return 1
-    fi
-
-    # Create logs directory if it doesn't exist
-    mkdir -p "$NODE_DIR/logs"
-
-    # Start the node in the background
-    cd "$CORE_CHAIN_DIR"
-    nohup ./build/bin/geth --config ./testnet2/config.toml \
-                          --datadir ./node \
-                          --cache 8000 \
-                          --rpc.allow-unprotected-txs \
-                          --networkid 1114 \
-                          --verbosity 4 \
-                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
-
-    # Wait a moment for the process to start
-    sleep 5
-    
-    # Check if the process is running
-    if ! pgrep -f "geth.*--networkid 1114" > /dev/null; then
-        show_error "Failed to start node"
-        return 1
-    fi
-
-    # Show log file location
+show_live_logs() {
     local log_file="$NODE_DIR/logs/core.log"
     
-    show_success "Node started successfully!\n\nTo view logs, run:\ntail -f $log_file"
-    
-    # Ask if user wants to view logs
-    dialog --colors \
-           --title "${PRIMARY}View Logs${NC}" \
-           --yes-label "View Logs" \
-           --no-label "Back" \
-           --yesno "\nWould you like to view the node logs now?" 7 50
-    
-    case $? in
-        0) # View logs
-            show_live_logs
-            ;;
-        1) # Back to menu
-            return 0
-            ;;
-    esac
-}
+    if [ ! -f "$log_file" ]; then
+        dialog --colors \
+               --title "${ERROR}Error${NC}" \
+               --msgbox "\nLog file not found at:\n$log_file\n\nPlease ensure the node is running." 10 60
+        return 1
+    }
 
-show_live_logs() {
     dialog --colors \
            --title "${PRIMARY}Live Logs${NC}" \
            --backtitle "Core Node Installer" \
-           --tailbox "/var/log/core-node.log" 30 100
+           --tailbox "$log_file" 30 100
 }
 
 show_last_50_lines() {
+    local log_file="$NODE_DIR/logs/core.log"
+    
+    if [ ! -f "$log_file" ]; then
+        dialog --colors \
+               --title "${ERROR}Error${NC}" \
+               --msgbox "\nLog file not found at:\n$log_file\n\nPlease ensure the node is running." 10 60
+        return 1
+    }
+
     local log_content
-    log_content=$(tail -n 50 /var/log/core-node.log | sed 's/^[0-9]\+|//g')
+    log_content=$(tail -n 50 "$log_file" | sed 's/^[0-9]\+|//g')
     dialog --colors \
            --title "${PRIMARY}Last 50 Log Lines${NC}" \
            --backtitle "Core Node Installer" \
@@ -407,8 +371,17 @@ show_last_50_lines() {
 }
 
 show_error_logs() {
+    local log_file="$NODE_DIR/logs/core.log"
+    
+    if [ ! -f "$log_file" ]; then
+        dialog --colors \
+               --title "${ERROR}Error${NC}" \
+               --msgbox "\nLog file not found at:\n$log_file\n\nPlease ensure the node is running." 10 60
+        return 1
+    }
+
     local error_logs
-    error_logs=$(grep -i "error\|failed\|fatal" /var/log/core-node.log | tail -n 50 | sed 's/^[0-9]\+|//g')
+    error_logs=$(grep -i "error\|failed\|fatal" "$log_file" | tail -n 50 | sed 's/^[0-9]\+|//g')
     if [ -z "$error_logs" ]; then
         error_logs="No errors found in the logs."
     fi
@@ -510,10 +483,31 @@ show_error_logs() {
 }
 
 check_node_installed() {
-    if [[ -d "$CORE_CHAIN_DIR" ]] && [[ -f "$CORE_CHAIN_DIR/build/bin/geth" ]]; then
-        return 0
+    # Check for core directory
+    if [[ ! -d "$CORE_CHAIN_DIR" ]]; then
+        log_message "Node not installed: Core chain directory not found at $CORE_CHAIN_DIR" "error"
+        return 1
     fi
-    return 1
+
+    # Check for geth binary
+    if [[ ! -f "$CORE_CHAIN_DIR/build/bin/geth" ]]; then
+        log_message "Node not installed: Geth binary not found at $CORE_CHAIN_DIR/build/bin/geth" "error"
+        return 1
+    }
+
+    # Check for node directory
+    if [[ ! -d "$NODE_DIR" ]]; then
+        log_message "Node not installed: Node directory not found at $NODE_DIR" "error"
+        return 1
+    }
+
+    # Check for config files
+    if [[ ! -f "$CORE_CHAIN_DIR/testnet2/config.toml" ]] || [[ ! -f "$CORE_CHAIN_DIR/testnet2/genesis.json" ]]; then
+        log_message "Node not installed: Configuration files missing in $CORE_CHAIN_DIR/testnet2/" "error"
+        return 1
+    }
+
+    return 0
 }
 
 show_navigation_buttons() {
@@ -919,6 +913,9 @@ start_node_with_consensus() {
         return 1
     fi
 
+    # Ensure directories exist
+    ensure_node_directories
+
     local validator_address
     if [ -f "$NODE_DIR/validator_address.txt" ]; then
         validator_address=$(cat "$NODE_DIR/validator_address.txt")
@@ -953,10 +950,10 @@ start_node_with_consensus() {
     # Start node with consensus key
     cd "$CORE_CHAIN_DIR"
     nohup ./build/bin/geth --config ./testnet2/config.toml \
-                          --datadir ./node \
+                          --datadir "$NODE_DIR" \
                           --unlock "$validator_address" \
                           --miner.etherbase "$validator_address" \
-                          --password password.txt \
+                          --password "$NODE_DIR/password.txt" \
                           --mine \
                           --allow-insecure-unlock \
                           --cache 8000 \
@@ -965,10 +962,10 @@ start_node_with_consensus() {
     # Wait for node to start
     sleep 5
     if pgrep -f "geth.*--mine" > /dev/null; then
-        show_success "Node started successfully with consensus key!"
+        show_success "Node started successfully with consensus key!\n\nLog file: $NODE_DIR/logs/core.log"
         return 0
     else
-        show_error "Failed to start node with consensus key"
+        show_error "Failed to start node with consensus key.\nCheck logs at: $NODE_DIR/logs/core.log"
         return 1
     fi
 }
@@ -1140,4 +1137,72 @@ show_main_menu() {
                 ;;
         esac
     done
+}
+
+ensure_node_directories() {
+    # Create required directories if they don't exist
+    mkdir -p "$INSTALL_DIR"
+    mkdir -p "$CORE_CHAIN_DIR"
+    mkdir -p "$NODE_DIR/logs"
+    mkdir -p "$CORE_CHAIN_DIR/testnet2"
+
+    # Set proper permissions
+    chmod 755 "$INSTALL_DIR"
+    chmod 755 "$CORE_CHAIN_DIR"
+    chmod 755 "$NODE_DIR"
+    chmod 755 "$NODE_DIR/logs"
+    chmod 755 "$CORE_CHAIN_DIR/testnet2"
+
+    log_message "Node directories created and permissions set" "info"
+}
+
+start_node() {
+    log_message "Starting Core node" "info"
+    show_progress "Starting Core node..."
+    
+    # Ensure directories exist
+    ensure_node_directories
+    
+    # Check if node is already running
+    if pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Node is already running!"
+        return 1
+    }
+
+    # Start the node in the background
+    cd "$CORE_CHAIN_DIR"
+    nohup ./build/bin/geth --config ./testnet2/config.toml \
+                          --datadir "$NODE_DIR" \
+                          --cache 8000 \
+                          --rpc.allow-unprotected-txs \
+                          --networkid 1114 \
+                          --verbosity 4 \
+                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
+
+    # Wait a moment for the process to start
+    sleep 5
+    
+    # Check if the process is running
+    if ! pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Failed to start node.\nCheck logs at: $NODE_DIR/logs/core.log"
+        return 1
+    fi
+
+    show_success "Node started successfully!\n\nLog file: $NODE_DIR/logs/core.log"
+    
+    # Ask if user wants to view logs
+    dialog --colors \
+           --title "${PRIMARY}View Logs${NC}" \
+           --yes-label "View Logs" \
+           --no-label "Back" \
+           --yesno "\nWould you like to view the node logs now?" 7 50
+    
+    case $? in
+        0) # View logs
+            show_live_logs
+            ;;
+        1) # Back to menu
+            return 0
+            ;;
+    esac
 }
