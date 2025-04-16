@@ -336,178 +336,63 @@ EOF
     show_success "Startup script created at $INSTALL_DIR/start-node.sh"
 }
 
-show_live_logs() {
-    local log_file="$NODE_DIR/logs/core.log"
+start_node() {
+    log_message "Starting Core node"
+    show_progress "Starting Core node..."
     
-    if [ ! -f "$log_file" ]; then
-        dialog --colors \
-               --title "${ERROR}Error${NC}" \
-               --msgbox "\nLog file not found at:\n$log_file\n\nPlease ensure the node is running." 10 60
+    # Check if node is already running
+    if pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Node is already running!"
         return 1
-    }
-
-    dialog --colors \
-           --title "${PRIMARY}Live Logs${NC}" \
-           --backtitle "Core Node Installer" \
-           --tailbox "$log_file" 30 100
-}
-
-show_last_50_lines() {
-    local log_file="$NODE_DIR/logs/core.log"
-    
-    if [ ! -f "$log_file" ]; then
-        dialog --colors \
-               --title "${ERROR}Error${NC}" \
-               --msgbox "\nLog file not found at:\n$log_file\n\nPlease ensure the node is running." 10 60
-        return 1
-    }
-
-    local log_content
-    log_content=$(tail -n 50 "$log_file" | sed 's/^[0-9]\+|//g')
-    dialog --colors \
-           --title "${PRIMARY}Last 50 Log Lines${NC}" \
-           --backtitle "Core Node Installer" \
-           --msgbox "$log_content" 30 100
-}
-
-show_error_logs() {
-    local log_file="$NODE_DIR/logs/core.log"
-    
-    if [ ! -f "$log_file" ]; then
-        dialog --colors \
-               --title "${ERROR}Error${NC}" \
-               --msgbox "\nLog file not found at:\n$log_file\n\nPlease ensure the node is running." 10 60
-        return 1
-    }
-
-    local error_logs
-    error_logs=$(grep -i "error\|failed\|fatal" "$log_file" | tail -n 50 | sed 's/^[0-9]\+|//g')
-    if [ -z "$error_logs" ]; then
-        error_logs="No errors found in the logs."
     fi
-    dialog --colors \
-           --title "${PRIMARY}Error Logs${NC}" \
-           --backtitle "Core Node Installer" \
-           --msgbox "$error_logs" 30 100
-}
 
-show_log_monitor_menu() {
-    while true; do
-        local choice
-        choice=$(dialog --colors \
-                       --title "${PRIMARY}Log Monitor${NC}" \
-                       --backtitle "Core Node Installer" \
-                       --cancel-label "Back" \
-                       --menu "\nSelect a log viewing option:" 15 60 4 \
-                       1 "View Live Logs" \
-                       2 "View Last 50 Lines" \
-                       3 "View Error Logs" \
-                       2>&1 >/dev/tty)
+    # Create logs directory if it doesn't exist
+    mkdir -p "$NODE_DIR/logs"
 
-        case $? in
-            0) # User selected an option
-                case $choice in
-                    1) show_live_logs ;;
-                    2) show_last_50_lines ;;
-                    3) show_error_logs ;;
-                esac
-                ;;
-            1) # Back
-                return 0
-                ;;
-        esac
-    done
-}
+    # Start the node in the background
+    cd "$CORE_CHAIN_DIR"
+    nohup ./build/bin/geth --config ./testnet2/config.toml \
+                          --datadir ./node \
+                          --cache 8000 \
+                          --rpc.allow-unprotected-txs \
+                          --networkid 1114 \
+                          --verbosity 4 \
+                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
 
-show_log_history() {
-    local lines=$1
+    # Wait a moment for the process to start
+    sleep 5
+    
+    # Check if the process is running
+    if ! pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Failed to start node"
+        return 1
+    fi
+
+    # Show log file location
     local log_file="$NODE_DIR/logs/core.log"
-    local temp_file=$(mktemp)
     
-    {
-        echo "Last $lines Lines of Node Logs"
-        echo "=========================="
-        echo
-        tail -n "$lines" "$log_file" 2>/dev/null || echo "No logs available yet"
-    } > "$temp_file"
-
+    show_success "Node started successfully!\n\nTo view logs, run:\ntail -f $log_file"
+    
+    # Ask if user wants to view logs
     dialog --colors \
-           --title "Log History" \
-           --backtitle "Core Node Installer" \
-           --ok-label "Back" \
-           --extra-button \
-           --extra-label "Main Menu" \
-           --textbox "$temp_file" 20 120
-
-    rm -f "$temp_file"
+           --title "${PRIMARY}View Logs${NC}" \
+           --yesno "\nWould you like to view the node logs now?" 7 50
     
-    case $? in
-        0) # Back button
-            return 1
-            ;;
-        3) # Main Menu button
-            return 255
-            ;;
-    esac
-}
-
-show_error_logs() {
-    local log_file="$NODE_DIR/logs/core.log"
-    local temp_file=$(mktemp)
-    
-    {
-        echo "Error Logs"
-        echo "=========="
-        echo
-        grep -i "error\|failed\|fatal" "$log_file" 2>/dev/null || echo "No error logs found"
-    } > "$temp_file"
-
-    dialog --colors \
-           --title "Error Logs" \
-           --backtitle "Core Node Installer" \
-           --ok-label "Back" \
-           --extra-button \
-           --extra-label "Main Menu" \
-           --textbox "$temp_file" 20 120
-
-    rm -f "$temp_file"
-    
-    case $? in
-        0) # Back button
-            return 1
-            ;;
-        3) # Main Menu button
-            return 255
-            ;;
-    esac
+    if [ $? -eq 0 ]; then
+        # Show logs in a scrollable dialog
+        tail -f "$log_file" 2>/dev/null | \
+        dialog --colors \
+               --title "${PRIMARY}Core Node Logs${NC}" \
+               --backtitle "Core Node Installer" \
+               --programbox "Press Ctrl+C to exit" 20 120
+    fi
 }
 
 check_node_installed() {
-    # Check for core directory
-    if [[ ! -d "$CORE_CHAIN_DIR" ]]; then
-        log_message "Node not installed: Core chain directory not found at $CORE_CHAIN_DIR" "error"
-        return 1
+    if [[ -d "$CORE_CHAIN_DIR" ]] && [[ -f "$CORE_CHAIN_DIR/build/bin/geth" ]]; then
+        return 0
     fi
-
-    # Check for geth binary
-    if [[ ! -f "$CORE_CHAIN_DIR/build/bin/geth" ]]; then
-        log_message "Node not installed: Geth binary not found at $CORE_CHAIN_DIR/build/bin/geth" "error"
-        return 1
-    }
-
-    # Check for node directory
-    if [[ ! -d "$NODE_DIR" ]]; then
-        log_message "Node not installed: Node directory not found at $NODE_DIR" "error"
-        return 1
-    }
-
-    # Check for config files
-    if [[ ! -f "$CORE_CHAIN_DIR/testnet2/config.toml" ]] || [[ ! -f "$CORE_CHAIN_DIR/testnet2/genesis.json" ]]; then
-        log_message "Node not installed: Configuration files missing in $CORE_CHAIN_DIR/testnet2/" "error"
-        return 1
-    }
-
-    return 0
+    return 1
 }
 
 show_navigation_buttons() {
@@ -539,13 +424,10 @@ show_navigation_buttons() {
 show_post_build_menu() {
     while true; do
         choice=$(show_navigation_buttons "Core Node Setup" \
-            "Start Node" \
-            "Start Node with Consensus Key" \
-            "Generate Consensus Key" \
-            "View Consensus Key" \
-            "Download Snapshot" \
+            "Start Node (Without Snapshot)" \
+            "Download Snapshot First" \
             "View Node Status" \
-            "Back to Main Menu")
+            "Exit")
         
         local ret=$?
         case $ret in
@@ -557,23 +439,12 @@ show_post_build_menu() {
                         fi
                         ;;
                     2)
-                        if initialize_genesis && start_node_with_consensus; then
-                            return 0
-                        fi
-                        ;;
-                    3)
-                        generate_consensus_key
-                        ;;
-                    4)
-                        view_consensus_key
-                        ;;
-                    5)
                         download_snapshot_with_progress || true
                         ;;
-                    6)
+                    3)
                         show_node_status
                         ;;
-                    7)
+                    4)
                         return 0
                         ;;
                 esac
@@ -646,25 +517,17 @@ show_node_status() {
         tail -n 5 "$NODE_DIR/logs/core.log" 2>/dev/null || echo "No logs available yet"
     } > "$temp_file"
 
-    local choice
-    choice=$(dialog --colors \
+    dialog --colors \
            --title "Node Status" \
            --backtitle "Core Node Installer" \
            --ok-label "Back" \
            --extra-button \
            --extra-label "Main Menu" \
-           --textbox "$temp_file" 20 70)
+           --textbox "$temp_file" 20 70
 
+    local ret=$?
     rm -f "$temp_file"
-    
-    case $? in
-        0) # Back button
-            return 1
-            ;;
-        3) # Main Menu button
-            return 255
-            ;;
-    esac
+    return $ret
 }
 
 show_node_management() {
@@ -675,11 +538,8 @@ show_node_management() {
         fi
         
         choice=$(show_navigation_buttons "Node Management" \
-            "Start Node (Without Consensus)" \
-            "Start Node with Consensus Key" \
+            "Start Node" \
             "Stop Node" \
-            "Generate Consensus Key" \
-            "View Consensus Key" \
             "View Logs" \
             "View Node Status" \
             "Back to Main Menu")
@@ -696,32 +556,19 @@ show_node_management() {
                         fi
                         ;;
                     2)
-                        if [ "$node_status" = "Running" ]; then
-                            show_error "Node is already running!"
-                        else
-                            start_node_with_consensus
-                        fi
-                        ;;
-                    3)
                         if [ "$node_status" = "Stopped" ]; then
                             show_error "Node is not running!"
                         else
                             stop_node
                         fi
                         ;;
-                    4)
-                        generate_consensus_key
-                        ;;
-                    5)
-                        view_consensus_key
-                        ;;
-                    6)
+                    3)
                         show_log_monitor_menu
                         ;;
-                    7)
+                    4)
                         show_node_status
                         ;;
-                    8)
+                    5)
                         return 0
                         ;;
                 esac
@@ -743,262 +590,6 @@ stop_node() {
     else
         show_error "Failed to stop node"
     fi
-}
-
-generate_consensus_key() {
-    if ! check_node_installed; then
-        show_error "Node is not installed.\nPlease install the node first."
-        return 1
-    fi
-
-    # Get password from user with validation
-    local password=""
-    local confirm_password=""
-    local valid_password=false
-
-    while [ "$valid_password" = false ]; do
-        password=$(dialog --colors \
-                         --title "${PRIMARY}Create Consensus Key${NC}" \
-                         --backtitle "Core Node Installer" \
-                         --insecure \
-                         --passwordbox "\nEnter a strong password for your consensus key:\n\n- Minimum 8 characters\n- At least one number\n- At least one special character" \
-                         15 60 \
-                         2>&1 >/dev/tty) || return 1
-
-        # Validate password strength
-        if [ ${#password} -lt 8 ]; then
-            dialog --colors \
-                   --title "${ERROR}Invalid Password${NC}" \
-                   --msgbox "\nPassword must be at least 8 characters long." 8 50
-            continue
-        fi
-
-        confirm_password=$(dialog --colors \
-                                --title "${PRIMARY}Confirm Password${NC}" \
-                                --backtitle "Core Node Installer" \
-                                --insecure \
-                                --passwordbox "\nConfirm your password:" 8 50 \
-                                2>&1 >/dev/tty) || return 1
-
-        if [ "$password" != "$confirm_password" ]; then
-            dialog --colors \
-                   --title "${ERROR}Password Mismatch${NC}" \
-                   --msgbox "\nPasswords do not match. Please try again." 8 50
-            continue
-        fi
-
-        valid_password=true
-    done
-
-    # Save password to file securely
-    echo "$password" > "$NODE_DIR/password.txt"
-    chmod 600 "$NODE_DIR/password.txt"
-
-    # Show progress during key generation
-    dialog --colors \
-           --title "${PRIMARY}Generating Consensus Key${NC}" \
-           --backtitle "Core Node Installer" \
-           --infobox "\nGenerating your consensus key...\nThis may take a moment." 6 50
-    
-    # Generate consensus key
-    cd "$CORE_CHAIN_DIR"
-    local output
-    output=$(./build/bin/geth account new --datadir ./node --password "$NODE_DIR/password.txt" 2>&1)
-    local address
-    address=$(echo "$output" | grep -o "0x[0-9a-fA-F]\{40\}")
-
-    if [ -n "$address" ]; then
-        # Save address to file
-        echo "$address" > "$NODE_DIR/validator_address.txt"
-        chmod 600 "$NODE_DIR/validator_address.txt"
-
-        # Show success message with options
-        while true; do
-            local choice
-            choice=$(dialog --colors \
-                           --title "${PRIMARY}Consensus Key Generated${NC}" \
-                           --backtitle "Core Node Installer" \
-                           --ok-label "Select" \
-                           --cancel-label "Back" \
-                           --menu "\nConsensus key generated successfully!\n\nValidator Address: $address\n\nWhat would you like to do next?" \
-                           17 70 4 \
-                           1 "View Key Details" \
-                           2 "Start Node with This Key" \
-                           3 "Go to Node Management" \
-                           4 "Go to Main Menu" \
-                           2>&1 >/dev/tty)
-
-            case $? in
-                0) # User selected an option
-                    case $choice in
-                        1) view_consensus_key ;;
-                        2) start_node_with_consensus ;;
-                        3) show_node_management; return $? ;;
-                        4) return 255 ;; # Return to main menu
-                    esac
-                    ;;
-                1) # Back
-                    return 0
-                    ;;
-            esac
-        done
-    else
-        show_error "Failed to generate consensus key.\nError: $output"
-        return 1
-    fi
-}
-
-view_consensus_key() {
-    if ! check_node_installed; then
-        show_error "Node is not installed.\nPlease install the node first."
-        return 1
-    fi
-
-    cd "$CORE_CHAIN_DIR"
-    
-    # Get list of accounts
-    local accounts_output
-    accounts_output=$(./build/bin/geth account list --datadir ./node 2>&1)
-    
-    # Get saved validator address
-    local saved_address=""
-    if [ -f "$NODE_DIR/validator_address.txt" ]; then
-        saved_address=$(cat "$NODE_DIR/validator_address.txt")
-    fi
-    
-    # Create detailed output
-    local output="Consensus Key Information\n"
-    output+="========================\n\n"
-    output+="Available Accounts:\n$accounts_output\n"
-    
-    if [ -n "$saved_address" ]; then
-        output+="\nActive Validator Address:\n$saved_address"
-    fi
-    
-    # Show key information with options
-    while true; do
-        local choice
-        choice=$(dialog --colors \
-                       --title "${PRIMARY}Consensus Key Details${NC}" \
-                       --backtitle "Core Node Installer" \
-                       --ok-label "Select" \
-                       --cancel-label "Back" \
-                       --menu "\n$output\n\nWhat would you like to do next?" \
-                       20 70 4 \
-                       1 "Generate New Key" \
-                       2 "Start Node with This Key" \
-                       3 "Go to Node Management" \
-                       4 "Go to Main Menu" \
-                       2>&1 >/dev/tty)
-
-        case $? in
-            0) # User selected an option
-                case $choice in
-                    1) generate_consensus_key; return $? ;;
-                    2) start_node_with_consensus ;;
-                    3) show_node_management; return $? ;;
-                    4) return 255 ;; # Return to main menu
-                esac
-                ;;
-            1) # Back
-                return 0
-                ;;
-        esac
-    done
-}
-
-start_node_with_consensus() {
-    if ! check_node_installed; then
-        show_error "Node is not installed.\nPlease install the node first."
-        return 1
-    fi
-
-    # Ensure directories exist
-    ensure_node_directories
-
-    local validator_address
-    if [ -f "$NODE_DIR/validator_address.txt" ]; then
-        validator_address=$(cat "$NODE_DIR/validator_address.txt")
-    fi
-
-    # Get validator address from user
-    validator_address=$(dialog --colors \
-                              --title "Start Node with Consensus Key" \
-                              --backtitle "Core Node Installer" \
-                              --inputbox "\nEnter validator address (0x...):\n[Press Enter to use saved: ${validator_address:-none}]" 10 60 "$validator_address" \
-                              2>&1 >/dev/tty) || return 1
-
-    if [ -z "$validator_address" ]; then
-        show_error "Validator address is required"
-        return 1
-    fi
-
-    # Verify password exists
-    if [ ! -f "$NODE_DIR/password.txt" ]; then
-        local password
-        password=$(dialog --colors \
-                         --title "Start Node with Consensus Key" \
-                         --backtitle "Core Node Installer" \
-                         --insecure \
-                         --passwordbox "\nEnter password for consensus key:" 10 50 \
-                         2>&1 >/dev/tty) || return 1
-
-        echo "$password" > "$NODE_DIR/password.txt"
-        chmod 600 "$NODE_DIR/password.txt"
-    fi
-
-    # Start node with consensus key
-    cd "$CORE_CHAIN_DIR"
-    nohup ./build/bin/geth --config ./testnet2/config.toml \
-                          --datadir "$NODE_DIR" \
-                          --unlock "$validator_address" \
-                          --miner.etherbase "$validator_address" \
-                          --password "$NODE_DIR/password.txt" \
-                          --mine \
-                          --allow-insecure-unlock \
-                          --cache 8000 \
-                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
-
-    # Wait for node to start
-    sleep 5
-    if pgrep -f "geth.*--mine" > /dev/null; then
-        show_success "Node started successfully with consensus key!\n\nLog file: $NODE_DIR/logs/core.log"
-        return 0
-    else
-        show_error "Failed to start node with consensus key.\nCheck logs at: $NODE_DIR/logs/core.log"
-        return 1
-    fi
-}
-
-show_consensus_management() {
-    while true; do
-        choice=$(dialog --colors \
-                       --title "Consensus Key Management" \
-                       --backtitle "Core Node Installer" \
-                       --ok-label "Select" \
-                       --cancel-label "Back" \
-                       --menu "\nManage consensus key:" 15 60 4 \
-                       1 "Generate New Consensus Key" \
-                       2 "View Consensus Key" \
-                       3 "Start Node with Consensus Key" \
-                       4 "Back" \
-                       2>&1 >/dev/tty) || return 1
-
-        case $choice in
-            1)
-                generate_consensus_key
-                ;;
-            2)
-                view_consensus_key
-                ;;
-            3)
-                start_node_with_consensus
-                ;;
-            4)
-                return 0
-                ;;
-        esac
-    done
 }
 
 setup_node() {
@@ -1059,150 +650,3 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     fi
     setup_node
 fi
-
-get_validator_address() {
-    local address=""
-    local temp_file=$(mktemp)
-    
-    while true; do
-        dialog --colors \
-               --title "${PRIMARY}Validator Address${NC}" \
-               --backtitle "Core Node Installer" \
-               --ok-label "Continue" \
-               --cancel-label "Back" \
-               --extra-button \
-               --extra-label "Main Menu" \
-               --inputbox "\nEnter your validator address:\n\nTip: Use Ctrl+V or right-click to paste" 12 60 "$address" 2>"$temp_file"
-
-        case $? in
-            0) # Continue
-                address=$(cat "$temp_file")
-                # Validate address format
-                if [[ "$address" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
-                    rm -f "$temp_file"
-                    echo "$address"
-                    return 0
-                else
-                    dialog --colors \
-                           --title "${ERROR}Invalid Address${NC}" \
-                           --msgbox "\nPlease enter a valid Ethereum address (0x followed by 40 hexadecimal characters)" 8 60
-                    continue
-                fi
-                ;;
-            1) # Back
-                rm -f "$temp_file"
-                return 1
-                ;;
-            3) # Main Menu
-                rm -f "$temp_file"
-                return 255
-                ;;
-        esac
-    done
-}
-
-show_main_menu() {
-    while true; do
-        local choice
-        choice=$(dialog --colors \
-                       --title "${PRIMARY}Core Node Installer${NC}" \
-                       --backtitle "Core Node Installer" \
-                       --cancel-label "Exit" \
-                       --menu "\nSelect an option:" 15 60 8 \
-                       1 "Start Node" \
-                       2 "Stop Node" \
-                       3 "Monitor Logs" \
-                       4 "Node Status" \
-                       5 "Update Node" \
-                       6 "Configure Node" \
-                       7 "Uninstall Node" \
-                       2>&1 >/dev/tty)
-
-        case $? in
-            0) # User selected an option
-                case $choice in
-                    1) start_node ;;
-                    2) stop_node ;;
-                    3) show_log_monitor_menu ;;
-                    4) show_node_status ;;
-                    5) update_node ;;
-                    6) configure_node ;;
-                    7) uninstall_node ;;
-                esac
-                ;;
-            1) # Exit
-                clear
-                echo "Thank you for using Core Node Installer!"
-                exit 0
-                ;;
-        esac
-    done
-}
-
-ensure_node_directories() {
-    # Create required directories if they don't exist
-    mkdir -p "$INSTALL_DIR"
-    mkdir -p "$CORE_CHAIN_DIR"
-    mkdir -p "$NODE_DIR/logs"
-    mkdir -p "$CORE_CHAIN_DIR/testnet2"
-
-    # Set proper permissions
-    chmod 755 "$INSTALL_DIR"
-    chmod 755 "$CORE_CHAIN_DIR"
-    chmod 755 "$NODE_DIR"
-    chmod 755 "$NODE_DIR/logs"
-    chmod 755 "$CORE_CHAIN_DIR/testnet2"
-
-    log_message "Node directories created and permissions set" "info"
-}
-
-start_node() {
-    log_message "Starting Core node" "info"
-    show_progress "Starting Core node..."
-    
-    # Ensure directories exist
-    ensure_node_directories
-    
-    # Check if node is already running
-    if pgrep -f "geth.*--networkid 1114" > /dev/null; then
-        show_error "Node is already running!"
-        return 1
-    }
-
-    # Start the node in the background
-    cd "$CORE_CHAIN_DIR"
-    nohup ./build/bin/geth --config ./testnet2/config.toml \
-                          --datadir "$NODE_DIR" \
-                          --cache 8000 \
-                          --rpc.allow-unprotected-txs \
-                          --networkid 1114 \
-                          --verbosity 4 \
-                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
-
-    # Wait a moment for the process to start
-    sleep 5
-    
-    # Check if the process is running
-    if ! pgrep -f "geth.*--networkid 1114" > /dev/null; then
-        show_error "Failed to start node.\nCheck logs at: $NODE_DIR/logs/core.log"
-        return 1
-    fi
-
-    show_success "Node started successfully!\n\nLog file: $NODE_DIR/logs/core.log"
-    
-    # Ask if user wants to view logs
-    dialog --colors \
-           --title "${PRIMARY}View Logs${NC}" \
-           --yes-label "View Logs" \
-           --no-label "Back" \
-           --yesno "\nWould you like to view the node logs now?" 7 50
-    
-    case $? in
-        0) # View logs
-            show_live_logs
-            ;;
-        1) # Back to menu
-            return 0
-            ;;
-    esac
-}
