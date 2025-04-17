@@ -159,14 +159,16 @@ show_main_menu() {
                        --backtitle "Core Node Installer" \
                        --ok-label "Select" \
                        --cancel-label "Exit" \
-                       --menu "\nChoose an option:" 15 70 7 \
+                       --menu "\nChoose an option:" 17 70 9 \
                        1 "Check Hardware Requirements" \
                        2 "Install/Upgrade Core Node" \
                        3 "$([ "$node_installed" = true ] && echo "Node Management" || echo "Node Management (Node not installed)")" \
-                       4 "$([ "$node_installed" = true ] && echo "View Logs" || echo "View Logs (Node not installed)")" \
-                       5 "$([ "$node_installed" = true ] && echo "View Node Status" || echo "View Status (Node not installed)")" \
-                       6 "Admin Dashboard" \
-                       7 "Exit" \
+                       4 "$([ "$node_installed" = true ] && echo "Generate Consensus Key" || echo "Generate Consensus Key (Node not installed)")" \
+                       5 "$([ "$node_installed" = true ] && echo "View Consensus Key" || echo "View Consensus Key (Node not installed)")" \
+                       6 "$([ "$node_installed" = true ] && echo "View Logs" || echo "View Logs (Node not installed)")" \
+                       7 "$([ "$node_installed" = true ] && echo "View Node Status" || echo "View Status (Node not installed)")" \
+                       8 "Admin Dashboard" \
+                       9 "Exit" \
                        2>&1 >/dev/tty) || exit 0
 
         case $choice in
@@ -197,22 +199,36 @@ show_main_menu() {
                 ;;
             4)
                 if [ "$node_installed" = true ]; then
-                    show_log_monitor_menu
+                    generate_consensus_key
                 else
                     show_error "Node is not installed.\nPlease install the node first."
                 fi
                 ;;
             5)
                 if [ "$node_installed" = true ]; then
-                    show_node_status
+                    view_consensus_key
                 else
                     show_error "Node is not installed.\nPlease install the node first."
                 fi
                 ;;
             6)
-                show_admin_dashboard
+                if [ "$node_installed" = true ]; then
+                    show_log_monitor_menu
+                else
+                    show_error "Node is not installed.\nPlease install the node first."
+                fi
                 ;;
             7)
+                if [ "$node_installed" = true ]; then
+                    show_node_status
+                else
+                    show_error "Node is not installed.\nPlease install the node first."
+                fi
+                ;;
+            8)
+                show_admin_dashboard
+                ;;
+            9)
                 clear
                 show_header "Thank you for using Core Node Installer!"
                 exit 0
