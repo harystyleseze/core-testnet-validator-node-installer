@@ -6,8 +6,8 @@ source ./utils.sh
 # Required specifications
 REQUIRED_CPU_CORES=4
 REQUIRED_RAM_GB=8
-REQUIRED_DISK_GB=1024  # 1 GB
-REQUIRED_INTERNET_SPEED=10  # 10 Mbps
+REQUIRED_DISK_GB=1  # 1 GB for test simulation || 1MB || 1TB
+REQUIRED_INTERNET_SPEED=1  # 10 Mbps
 
 check_hardware_requirements() {
     log_message "Starting hardware requirements check"

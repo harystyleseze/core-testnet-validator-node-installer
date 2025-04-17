@@ -60,27 +60,49 @@ show_live_logs() {
     
     # Check if log file exists
     if [[ ! -f "$log_file" ]]; then
-        dialog --title "Error" --msgbox "Log file not found: $log_file" 8 50
+        dialog --colors \
+               --title "Error" \
+               --msgbox "\nLog file not found: $log_file" 8 50
         return 1
     fi
+
+    # Get terminal size
+    local term_height term_width
+    term_height=$(tput lines)
+    term_width=$(tput cols)
     
-    # Create temporary file for formatted logs
+    # Calculate dimensions
+    local log_height=$((term_height - 6))  # Reserve space for borders and buttons
+    local log_width=$((term_width - 4))    # Reserve space for borders
+    
+    # Create a temporary file for the dialog command
     local temp_file
-    temp_file=$(mktemp) || { dialog --title "Error" --msgbox "Failed to create temporary file" 8 40; return 1; }
-    
-    # Ensure temp file is cleaned up
-    trap 'rm -f "$temp_file"' EXIT
-    
-    # Watch the log file and update the display every 2 seconds
-    watch -n 2 "tail -n $lines \"$log_file\" 2>/dev/null | while read -r line; do
-        if [[ \$line =~ ERROR|FATAL|WARN ]]; then
-            echo -e '\033[0;31m'\$line'\033[0m'
-        elif [[ \$line =~ INFO|SUCCESS ]]; then
-            echo -e '\033[0;32m'\$line'\033[0m'
-        else
-            echo \$line
-        fi
-    done > \"$temp_file\" 2>/dev/null && dialog --title \"$title\" --tailbox \"$temp_file\" 25 100" || true
+    temp_file=$(mktemp)
+    trap 'rm -f "$temp_file"; kill $tail_pid 2>/dev/null' EXIT INT TERM
+
+    # Start tail in background and redirect to temp file
+    tail -f "$log_file" > "$temp_file" &
+    tail_pid=$!
+
+    # Show dialog with real-time updates
+    dialog --colors \
+           --title "$title" \
+           --backtitle "Core Node Installer" \
+           --begin 2 2 \
+           --tailboxbg "$temp_file" $log_height $log_width \
+           --and-widget \
+           --begin $((term_height - 4)) 2 \
+           --ok-label "Back" \
+           --extra-button --extra-label "Main Menu" \
+           --msgbox "Press OK to go back or Main Menu to return to main menu" 3 50
+
+    local ret=$?
+
+    # Clean up
+    kill $tail_pid 2>/dev/null
+    rm -f "$temp_file"
+
+    return $ret
 }
 
 # Function to show log statistics

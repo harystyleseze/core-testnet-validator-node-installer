@@ -1,0 +1,34 @@
+[2025-04-16 13:00:10] [38;2;248;146;19mINFO:[0m Starting Core node
+[2025-04-16 15:09:59] [38;2;248;146;19mINFO:[0m Starting Core node
+[2025-04-16 15:42:57] [38;2;248;146;19mINFO:[0m Starting Core node
+[2025-04-16 16:21:49] [38;2;248;146;19mINFO:[0m Starting hardware requirements check
+[2025-04-16 16:22:34] [38;2;248;146;19mINFO:[0m Hardware check failed
+[2025-04-16 16:23:24] [38;2;248;146;19mINFO:[0m Starting hardware requirements check
+[2025-04-16 16:24:06] [38;2;248;146;19mINFO:[0m Hardware check passed
+[2025-04-16 16:24:15] [38;2;248;146;19mINFO:[0m Cloning Core repository
+[2025-04-16 17:41:26] [38;2;248;146;19mINFO:[0m Starting Core node
+[2025-04-16 17:51:41] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-16 17:53:59] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-16 17:54:16] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-16 18:05:15] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-16 18:06:20] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 18:11:14] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-16 18:11:36] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 18:39:29] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 18:40:24] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 21:26:16] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 21:31:05] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 21:42:22] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 21:50:40] [38;2;248;146;19mINFO:[0m Attempting to stop Core node
+[2025-04-16 21:50:55] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 21:59:18] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 22:05:23] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 22:12:15] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 22:12:19] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-16 22:13:33] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 12:54:31] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 13:19:19] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 14:00:46] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 14:10:02] [38;2;248;146;19mINFO:[0m Attempting to stop Core node
+[2025-04-17 14:23:51] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-17 14:24:29] [38;2;248;146;19mINFO:[0m Initializing genesis block
