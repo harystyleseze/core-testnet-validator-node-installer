@@ -32,3 +32,17 @@
 [2025-04-17 14:10:02] [38;2;248;146;19mINFO:[0m Attempting to stop Core node
 [2025-04-17 14:23:51] [38;2;248;146;19mINFO:[0m Generating consensus key
 [2025-04-17 14:24:29] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 16:30:39] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 16:42:45] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 16:50:44] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 16:56:15] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 17:03:10] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 17:11:19] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 17:41:01] [38;2;248;146;19mINFO:[0m Starting snapshot download
+[2025-04-17 17:45:34] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-17 17:46:10] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 17:46:19] [38;2;248;146;19mINFO:[0m Attempting to stop Core node
+[2025-04-17 17:51:17] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-17 17:51:45] [38;2;248;146;19mINFO:[0m Initializing genesis block
+[2025-04-17 18:01:13] [38;2;248;146;19mINFO:[0m Generating consensus key
+[2025-04-17 18:01:31] [38;2;248;146;19mINFO:[0m Initializing genesis block

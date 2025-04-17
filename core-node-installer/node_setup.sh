@@ -50,6 +50,7 @@ install_dependencies() {
         "curl"
         "lz4"
         "unzip"
+        "pv"
     )
     
     if [ -f /etc/debian_version ]; then
@@ -441,9 +442,61 @@ initialize_genesis() {
         return 1
     fi
 
-    # Initialize genesis block
-    if ! ./build/bin/geth --datadir "$NODE_DIR" init "$CORE_CHAIN_DIR/testnet2/genesis.json"; then
-        show_error "Failed to initialize genesis block"
+    # Capture the output of genesis initialization
+    local init_output
+    init_output=$(./build/bin/geth --datadir "$NODE_DIR" init "$CORE_CHAIN_DIR/testnet2/genesis.json" 2>&1)
+    local init_status=$?
+
+    # Check for specific error patterns
+    if echo "$init_output" | grep -q "gap in the chain between ancients"; then
+        dialog --colors \
+               --title "Database Error" \
+               --yesno "\n\Z1Database inconsistency detected!\Zn\n\nThere is a gap in the blockchain data. Would you like to:\n\n1. Reset the database and start fresh\n2. Download a new snapshot\n\nChoose 'Yes' to reset, 'No' to download snapshot." 15 60
+
+        if [ $? -eq 0 ]; then
+            # User chose to reset
+            dialog --colors \
+                   --title "Confirm Reset" \
+                   --yesno "\n\Z1Warning: This will delete all existing chain data!\Zn\n\nAre you sure you want to proceed?" 10 60
+
+            if [ $? -eq 0 ]; then
+                show_progress "Removing existing chain data..."
+                rm -rf "$NODE_DIR/geth/chaindata"
+                rm -rf "$NODE_DIR/geth/lightchaindata"
+                rm -rf "$NODE_DIR/geth/ancient"
+
+                # Try initialization again
+                if ! ./build/bin/geth --datadir "$NODE_DIR" init "$CORE_CHAIN_DIR/testnet2/genesis.json"; then
+                    show_error "Failed to initialize genesis block after reset"
+                    return 1
+                fi
+                show_success "Database reset and genesis initialized successfully!"
+            else
+                return 1
+            fi
+        else
+            # User chose to download snapshot
+            dialog --colors \
+                   --title "Download Snapshot" \
+                   --yesno "\nWould you like to download and apply a fresh snapshot now?" 8 60
+
+            if [ $? -eq 0 ]; then
+                if download_and_prepare_snapshot; then
+                    show_success "Snapshot downloaded and prepared successfully!"
+                    return 0
+                else
+                    show_error "Failed to download and prepare snapshot"
+                    return 1
+                fi
+            else
+                return 1
+            fi
+        fi
+    elif [ $init_status -ne 0 ]; then
+        # Handle other initialization errors
+        dialog --colors \
+               --title "Initialization Error" \
+               --msgbox "\n\Z1Genesis initialization failed!\Zn\n\nError:\n$init_output" 15 70
         return 1
     fi
 
@@ -1048,6 +1101,7 @@ show_node_management() {
             "View Consensus Key" \
             "View Logs" \
             "View Node Status" \
+            "Download & Sync Snapshot" \
             "Back to Main Menu")
         
         case $choice in
@@ -1115,6 +1169,23 @@ show_node_management() {
                 fi
                 ;;
             8)
+                dialog --colors \
+                       --title "Download & Sync Snapshot" \
+                       --yesno "\nThis will:\n\n1. Download the latest snapshot\n2. Extract it to the node directory\n3. Start the node in snapshot sync mode\n\nDo you want to continue?" 12 60
+                
+                if [ $? -eq 0 ]; then
+                    if download_and_prepare_snapshot; then
+                        dialog --colors \
+                               --title "Start with Snapshot" \
+                               --yesno "\nSnapshot prepared successfully!\n\nWould you like to start the node with snapshot sync now?" 10 60
+                        
+                        if [ $? -eq 0 ]; then
+                            initialize_genesis && start_node_with_snapshot
+                        fi
+                    fi
+                fi
+                ;;
+            9)
                 return 0
                 ;;
             *)
@@ -1174,6 +1245,347 @@ setup_node() {
         return 255  # Return to main menu
     fi
     return $ret
+}
+
+# Function to check and install required tools
+check_snapshot_dependencies() {
+    local missing_deps=()
+    
+    # Check for curl
+    if ! command -v curl >/dev/null 2>&1; then
+        missing_deps+=("curl")
+    fi
+    
+    # Check for pv
+    if ! command -v pv >/dev/null 2>&1; then
+        missing_deps+=("pv")
+    fi
+    
+    # Check for lz4
+    if ! command -v lz4 >/dev/null 2>&1; then
+        missing_deps+=("lz4")
+    fi
+    
+    # If any dependencies are missing, try to install them
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        dialog --colors \
+               --title "Missing Dependencies" \
+               --yesno "\nThe following tools are required but not installed:\n\n$(printf "• %s\n" "${missing_deps[@]}")\n\nWould you like to install them now?" 12 60
+        
+        if [ $? -eq 0 ]; then
+            show_progress "Installing required dependencies..."
+            
+            # Detect package manager and install
+            if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update && sudo apt-get install -y "${missing_deps[@]}"
+            elif command -v yum >/dev/null 2>&1; then
+                sudo yum install -y epel-release && sudo yum install -y "${missing_deps[@]}"
+            else
+                show_error "Could not detect package manager.\nPlease install: ${missing_deps[*]}"
+                return 1
+            fi
+        else
+            show_error "Required dependencies must be installed to continue."
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# Function to format progress for dialog
+format_progress() {
+    local current=$1
+    local total=$2
+    local width=50  # Progress bar width
+    local percentage=$((current * 100 / total))
+    local filled=$((percentage * width / 100))
+    local empty=$((width - filled))
+    
+    # Create the progress bar string
+    local bar="["
+    for ((i=0; i<filled; i++)); do bar+="#"; done
+    for ((i=0; i<empty; i++)); do bar+="-"; done
+    bar+="]"
+    
+    # Format percentage with padding
+    printf "Progress: %s %3d%%\n" "$bar" "$percentage"
+}
+
+# Function to attempt download with retries
+attempt_download() {
+    local url="$1"
+    local output_file="$2"
+    local expected_size="$3"
+    local max_retries=3
+    local retry_count=0
+    local success=0
+
+    while [ $retry_count -lt $max_retries ] && [ $success -eq 0 ]; do
+        # Show retry attempt if not first try
+        if [ $retry_count -gt 0 ]; then
+            dialog --colors \
+                   --title "Retrying Download" \
+                   --yesno "\nDownload attempt $((retry_count + 1)) of $max_retries\n\nWould you like to retry?" 10 60
+            
+            if [ $? -ne 0 ]; then
+                return 1
+            fi
+        fi
+
+        # Show download progress with proper pv handling
+        if (
+            curl -L --connect-timeout 30 --retry 3 --retry-delay 5 --max-time 7200 "$url" | \
+            pv -n -s "$expected_size" > "$output_file"
+        ) 2>&1 | \
+        while read -r percent; do
+            percent=${percent%%.*} # trim decimal if any
+            echo "XXX"
+            echo "$percent"
+            echo -e "\nDownloading Core Snapshot...\n\nAttempt $(($retry_count + 1)) of $max_retries\n\nThis may take a while depending on your internet speed.\n\nExpected Size: $(numfmt --to=iec-i --suffix=B $expected_size)"
+            echo "XXX"
+        done | dialog --title "Downloading Snapshot" \
+                     --backtitle "Core Node Installer" \
+                     --gauge "" 12 70 0; then
+
+            # Verify the downloaded file
+            if [ -f "$output_file" ]; then
+                local actual_size=$(stat -c%s "$output_file" 2>/dev/null)
+                
+                # Allow for small difference (1MB) in file size
+                local size_diff=$((expected_size - actual_size))
+                if [ "${size_diff#-}" -lt 1048576 ]; then
+                    success=1
+                    break
+                else
+                    # Show detailed size mismatch
+                    local actual_hr=$(numfmt --to=iec-i --suffix=B $actual_size)
+                    local expected_hr=$(numfmt --to=iec-i --suffix=B $expected_size)
+                    local percent_complete=$(( actual_size * 100 / expected_size ))
+                    
+                    dialog --colors \
+                           --title "Download Incomplete" \
+                           --yesno "\nDownload is incomplete ($percent_complete% downloaded)\n\nReceived: $actual_hr\nExpected: $expected_hr\n\nWould you like to retry?" 12 60
+                    
+                    if [ $? -ne 0 ]; then
+                        return 1
+                    fi
+                fi
+            else
+                dialog --colors \
+                       --title "Download Failed" \
+                       --yesno "\nDownload failed - no file was created.\n\nWould you like to retry?" 10 60
+                
+                if [ $? -ne 0 ]; then
+                    return 1
+                fi
+            fi
+        else
+            # curl|pv pipeline failed
+            dialog --colors \
+                   --title "Download Error" \
+                   --yesno "\nDownload was interrupted.\n\nWould you like to retry?" 10 60
+            
+            if [ $? -ne 0 ]; then
+                return 1
+            fi
+        fi
+
+        retry_count=$((retry_count + 1))
+        rm -f "$output_file" 2>/dev/null
+    done
+
+    if [ $success -eq 1 ]; then
+        return 0
+    else
+        show_error "Failed to download after $max_retries attempts.\nPlease check your internet connection and try again later."
+        return 1
+    fi
+}
+
+# Function to download and prepare snapshot
+download_and_prepare_snapshot() {
+    local snapshot_url="https://snap.coredao.org/coredao-snapshot-testnet2-20250221-pruned.tar.lz4"
+    local snapshot_file="coredao-snapshot-testnet2-20250221-pruned.tar.lz4"
+    local extracted_file="coredao-snapshot-testnet2-20250221-pruned.tar"
+    
+    # Check and install dependencies if needed
+    if ! check_snapshot_dependencies; then
+        return 1
+    fi
+    
+    log_message "Starting snapshot download"
+    cd "$CORE_CHAIN_DIR"
+
+    # Show initial progress dialog
+    dialog --colors \
+           --title "Preparing Download" \
+           --infobox "\nGetting snapshot information..." 5 40
+    sleep 1
+
+    # Get total file size
+    local total_size=$(curl -sI "$snapshot_url" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+    
+    if [ -z "$total_size" ]; then
+        show_error "Could not determine snapshot size.\nPlease check your internet connection."
+        return 1
+    fi
+
+    local total_size_hr=$(numfmt --to=iec-i --suffix=B "$total_size")
+    
+    # Remove existing files if they exist
+    rm -f "$snapshot_file" "$extracted_file" 2>/dev/null
+
+    # Show download progress with proper pv handling
+    if ! (
+        curl -L "$snapshot_url" | \
+        pv -n -s "$total_size" > "$snapshot_file"
+    ) 2>&1 | \
+    while read -r percent; do
+        percent=${percent%%.*} # trim decimal if any
+        echo "XXX"
+        echo "$percent"
+        echo -e "\nDownloading Core Snapshot ($total_size_hr)...\n\nThis may take a while depending on your internet speed and the data size."
+        echo "XXX"
+    done | dialog --title "Downloading Snapshot" \
+                  --backtitle "Core Node Installer" \
+                  --gauge "" 10 70 0; then
+        show_error "Download failed.\nPlease check your internet connection and try again."
+        rm -f "$snapshot_file" 2>/dev/null
+        return 1
+    fi
+
+    # Verify download
+    if [ ! -f "$snapshot_file" ] || [ ! -s "$snapshot_file" ]; then
+        show_error "Failed to download snapshot or file is empty"
+        rm -f "$snapshot_file" 2>/dev/null
+        return 1
+    fi
+
+    # Get actual size
+    local actual_size=$(stat -c%s "$snapshot_file" 2>/dev/null)
+    if [ "$actual_size" != "$total_size" ]; then
+        show_error "Download incomplete.\nExpected: $total_size_hr\nGot: $(numfmt --to=iec-i --suffix=B $actual_size)"
+        rm -f "$snapshot_file" 2>/dev/null
+        # Attempt download with retries
+        if ! attempt_download "$snapshot_url" "$snapshot_file" "$total_size"; then  
+            return 1
+        fi
+    fi
+
+    # Verify integrity
+    dialog --title "Verifying Download" \
+           --backtitle "Core Node Installer" \
+           --infobox "\nVerifying downloaded snapshot..." 5 40
+    
+    if ! lz4 -t "$snapshot_file" > /dev/null 2>&1; then
+        dialog --colors \
+               --title "Verification Failed" \
+               --yesno "\nThe downloaded file appears to be corrupted.\n\nWould you like to try downloading again?" 10 60
+        
+        if [ $? -eq 0 ]; then
+            rm -f "$snapshot_file"
+            # Recursive call to try again
+            download_and_prepare_snapshot
+            return $?
+        else
+            show_error "Download verification failed.\nPlease try again later."
+            rm -f "$snapshot_file"
+            return 1
+        fi
+    fi
+
+    # Decompression
+    dialog --title "Decompressing Snapshot" \
+           --backtitle "Core Node Installer" \
+           --infobox "\nPreparing to decompress snapshot..." 5 40
+    sleep 1
+
+    if ! (pv -n "$snapshot_file" | lz4 -d > "$extracted_file") 2>&1 | \
+        dialog --title "Decompressing Snapshot" \
+               --backtitle "Core Node Installer" \
+               --gauge "\nDecompressing snapshot...\n\nThis may take a while depending on your system speed." 10 70; then
+        show_error "Failed to decompress snapshot"
+        rm -f "$snapshot_file" "$extracted_file"
+        return 1
+    fi
+
+    if [ ! -f "$extracted_file" ] || [ ! -s "$extracted_file" ]; then
+        show_error "Decompression failed or produced empty file"
+        rm -f "$snapshot_file" "$extracted_file"
+        return 1
+    fi
+
+    # Extraction
+    dialog --title "Extracting Snapshot" \
+           --backtitle "Core Node Installer" \
+           --infobox "\nPreparing to extract snapshot..." 5 40
+    sleep 1
+
+    mkdir -p "$NODE_DIR"
+
+    if ! (pv -n "$extracted_file" | tar xf - -C "$NODE_DIR") 2>&1 | \
+        dialog --title "Extracting Snapshot" \
+               --backtitle "Core Node Installer" \
+               --gauge "\nExtracting snapshot...\n\nThis may take a while depending on your disk speed." 10 70; then
+        show_error "Failed to extract snapshot"
+        rm -f "$snapshot_file" "$extracted_file"
+        return 1
+    fi
+
+    rm -f "$snapshot_file" "$extracted_file"
+    
+    show_success "Snapshot downloaded and prepared successfully!"
+    return 0
+}
+
+# Function to start node with snapshot sync
+start_node_with_snapshot() {
+    local log_file="$NODE_DIR/logs/core.log"
+    
+    # Check if node is already running
+    if check_node_running; then
+        show_error "Node is already running. Please stop it first."
+        return 1
+    fi
+
+    log_message "Starting Core node with snapshot sync"
+    show_progress "Starting Core node..."
+
+    cd "$CORE_CHAIN_DIR"
+
+    # Create logs directory if it doesn't exist
+    mkdir -p "$NODE_DIR/logs"
+
+    # Clear existing log
+    : > "$log_file"
+
+    nohup ./build/bin/geth \
+        --config "$CORE_CHAIN_DIR/testnet2/config.toml" \
+        --datadir "$NODE_DIR" \
+        --syncmode snap \
+        --networkid 1114 \
+        --cache 8000 \
+        --verbosity 4 \
+        2>&1 | tee -a "$log_file" &
+
+    # Wait for up to 10 seconds for the node to start
+    local counter=0
+    while [ $counter -lt 10 ]; do
+        sleep 1
+        if grep -q "Started P2P networking" "$log_file" 2>/dev/null; then
+            show_success "Node started successfully with snapshot sync!"
+            return 0
+        fi
+        counter=$((counter + 1))
+    done
+
+    if check_node_running; then
+        show_success "Node started successfully with snapshot sync!"
+        return 0
+    else
+        show_error "Failed to start node. Check logs for details."
+        return 1
+    fi
 }
 
 # Run setup if script is run directly
