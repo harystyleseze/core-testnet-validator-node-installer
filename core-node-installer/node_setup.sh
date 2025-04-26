@@ -285,7 +285,7 @@ download_snapshot() {
     
     # Show progress dialog
     (wget -q --show-progress https://snap.coredao.org/coredao-snapshot-testnet-20240327-pruned.tar.lz4 2>&1) | \
-    dialog --title "Downloading Snapshot" --gauge "Please wait..." 10 70 0
+    dialog --title "Downloading Snapshot" --gauge "Please wait..." 10 70
 
     show_progress "Decompressing snapshot..."
     lz4 -d coredao-snapshot-testnet-20240327-pruned.tar.lz4 coredao-snapshot-testnet-20240327-pruned.tar
@@ -633,6 +633,234 @@ show_navigation_buttons() {
     return $?
 }
 
+# Function to validate password
+validate_password() {
+    local password="$1"
+    local errors=()
+    local requirements_met=0
+    
+    # Check minimum length
+    if [ ${#password} -lt 8 ]; then
+        errors+=("Password must be at least 8 characters long")
+    else
+        ((requirements_met++))
+    fi
+    
+    # Check for uppercase letters
+    if ! echo "$password" | grep -q "[A-Z]"; then
+        errors+=("Password must contain at least one uppercase letter")
+    else
+        ((requirements_met++))
+    fi
+    
+    # Check for lowercase letters
+    if ! echo "$password" | grep -q "[a-z]"; then
+        errors+=("Password must contain at least one lowercase letter")
+    else
+        ((requirements_met++))
+    fi
+    
+    # Check for numbers
+    if ! echo "$password" | grep -q "[0-9]"; then
+        errors+=("Password must contain at least one number")
+    else
+        ((requirements_met++))
+    fi
+    
+    # Check for special characters - Fixed pattern
+    if ! printf "%s" "$password" | grep -q '[[:punct:]]'; then
+        errors+=("Password must contain at least one special character")
+    else
+        ((requirements_met++))
+    fi
+    
+    # If there are any errors, show them to the user
+    if [ ${#errors[@]} -gt 0 ]; then
+        local error_msg="Password requirements not met:\n\n"
+        for error in "${errors[@]}"; do
+            error_msg+="• \Z1$error\Zn\n"
+        done
+        error_msg+="\nRequirements met: $requirements_met/5"
+        
+        dialog --colors \
+               --title "Password Requirements" \
+               --msgbox "\n$error_msg" 15 60
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to check and install Python and bcrypt
+check_bcrypt_dependencies() {
+    local missing_deps=()
+    
+    # Check for Python3
+    if ! command -v python3 >/dev/null 2>&1; then
+        missing_deps+=("python3")
+    fi
+
+    # Check for pip
+    if ! command -v pip3 >/dev/null 2>&1; then
+        missing_deps+=("python3-pip")
+    fi
+
+    # If python and pip are available, check for bcrypt
+    if command -v python3 >/dev/null 2>&1 && command -v pip3 >/dev/null 2>&1; then
+        if ! python3 -c "import bcrypt" 2>/dev/null; then
+            missing_deps+=("python3-bcrypt")
+        fi
+    fi
+
+    # If any dependencies are missing, prompt to install
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        dialog --colors \
+               --title "Missing Dependencies" \
+               --yesno "\nThe following dependencies are required for secure password encryption:\n\n$(printf "• %s\n" "${missing_deps[@]}")\n\nWould you like to install them now?" 12 60
+        
+        if [ $? -eq 0 ]; then
+            show_progress "Installing required dependencies..."
+            
+            # Install dependencies based on package manager
+            if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install -y "${missing_deps[@]}"
+                # Ensure bcrypt is installed via pip as well
+                sudo pip3 install bcrypt
+            elif command -v yum >/dev/null 2>&1; then
+                sudo yum install -y python3 python3-pip
+                sudo pip3 install bcrypt
+            elif command -v pacman >/dev/null 2>&1; then
+                sudo pacman -Sy --noconfirm python python-pip
+                sudo pip3 install bcrypt
+            else
+                show_error "Unsupported package manager.\nPlease install Python3 and bcrypt manually."
+                return 1
+            fi
+            
+            # Verify installation
+            if ! python3 -c "import bcrypt" 2>/dev/null; then
+                show_error "Failed to install bcrypt.\nPlease install it manually."
+                return 1
+            fi
+        else
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+# Function to encrypt password using bcrypt
+encrypt_password() {
+    local password="$1"
+    local python_script=$(cat << 'EOF'
+import bcrypt
+import sys
+import base64
+
+password = sys.stdin.read().encode('utf-8')
+salt = bcrypt.gensalt()
+hashed = bcrypt.hashpw(password, salt)
+print(base64.b64encode(hashed).decode('utf-8'))
+EOF
+)
+    echo -n "$password" | python3 -c "$python_script"
+}
+
+# Function to verify password using bcrypt
+verify_password() {
+    local password="$1"
+    local hashed="$2"
+    local python_script=$(cat << 'EOF'
+import bcrypt
+import sys
+import base64
+
+password = sys.stdin.readline().strip().encode('utf-8')
+hashed = base64.b64decode(sys.stdin.readline().strip())
+if bcrypt.checkpw(password, hashed):
+    sys.exit(0)
+sys.exit(1)
+EOF
+)
+    echo -e "$password\n$hashed" | python3 -c "$python_script"
+}
+
+# Function to securely write encrypted password to file
+write_password_securely() {
+    local password="$1"
+    local password_file="$2"
+    local old_umask
+    
+    # Check bcrypt dependencies first
+    if ! check_bcrypt_dependencies; then
+        return 1
+    fi
+    
+    # Encrypt the password
+    local encrypted_password
+    encrypted_password=$(encrypt_password "$password")
+    if [ $? -ne 0 ]; then
+        log_message "Failed to encrypt password" "error"
+        return 1
+    fi
+    
+    # Save current umask
+    old_umask=$(umask)
+    
+    # Set restrictive permissions before file creation (u=rw,g=,o=)
+    umask 0177
+    
+    # Create file with secure permissions from the start
+    # Use file descriptor to write directly without temporary files
+    if ! (
+        exec 3>"$password_file"
+        printf "%s" "$encrypted_password" >&3
+        exec 3>&-
+    ); then
+        # Restore original umask
+        umask "$old_umask"
+        return 1
+    fi
+    
+    # Restore original umask
+    umask "$old_umask"
+    
+    # Double-check file permissions (defense in depth)
+    if ! chmod 0600 "$password_file"; then
+        rm -f "$password_file"
+        return 1
+    fi
+    
+    # Verify file permissions
+    local file_perms
+    file_perms=$(stat -c '%a' "$password_file")
+    if [ "$file_perms" != "600" ]; then
+        rm -f "$password_file"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to read and verify encrypted password
+read_encrypted_password() {
+    local password_file="$1"
+    local entered_password="$2"
+    
+    # Read the encrypted password from file
+    local stored_hash
+    stored_hash=$(cat "$password_file")
+    
+    # Verify the password
+    if ! verify_password "$entered_password" "$stored_hash"; then
+        return 1
+    fi
+    
+    return 0
+}
+
 generate_consensus_key() {
     log_message "Generating consensus key"
     show_progress "Preparing to generate a new consensus key..."
@@ -643,12 +871,41 @@ generate_consensus_key() {
 
     mkdir -p "$NODE_DIR"
 
+    # Show password requirements before asking for password
+    dialog --colors \
+           --title "Password Requirements" \
+           --msgbox "\nYour password must meet the following requirements:\n\n\
+• Minimum 8 characters long\n\
+• At least one uppercase letter\n\
+• At least one lowercase letter\n\
+• At least one number\n\
+• At least one special character (!@#$%^&*()_+-=[]{}|;:'\",.<>?/)" 15 70
+
     while true; do
         # Ask for password
         local password1 password2
         password1=$(dialog --insecure --no-cancel \
             --title "Set Password" \
             --passwordbox "\nEnter a password to protect your consensus key:" 10 60 3>&1 1>&2 2>&3)
+
+        # Check if password is empty
+        if [ -z "$password1" ]; then
+            dialog --colors \
+                   --title "Invalid Password" \
+                   --msgbox "\n\Z1Password cannot be empty!\Zn" 7 40
+            continue
+        fi
+
+        # Validate password strength
+        if ! validate_password "$password1"; then
+            dialog --colors \
+                   --title "Invalid Password" \
+                   --yesno "\nWould you like to try again?" 7 40
+            if [ $? -ne 0 ]; then
+                return 1
+            fi
+            continue
+        fi
 
         password2=$(dialog --insecure --no-cancel \
             --title "Confirm Password" \
@@ -665,16 +922,12 @@ generate_consensus_key() {
             continue
         fi
 
-        # Save password securely
-        echo "$password1" > "$PASSWORD_FILE"
-        chmod 600 "$PASSWORD_FILE"
-
-        # Generate account using password
-        local output
-        if ! output=$(geth --datadir "$NODE_DIR" account new --password "$PASSWORD_FILE" 2>&1); then
+        # Save password securely using the new function
+        if ! write_password_securely "$password1" "$PASSWORD_FILE"; then
+            log_message "Failed to securely write password file" "error"
             dialog --colors \
-                   --title "Error" \
-                   --yesno "\n\Z1Failed to generate consensus key!\Zn\n\nWould you like to try again?" 8 50
+                   --title "Security Error" \
+                   --yesno "\n\Z1Failed to securely save password!\Zn\n\nWould you like to try again?" 8 50
             
             if [ $? -ne 0 ]; then
                 return 1
@@ -682,10 +935,35 @@ generate_consensus_key() {
             continue
         fi
 
+        # Generate account using password
+        local output
+        cd "$CORE_CHAIN_DIR"
+        
+        # Log the attempt
+        log_message "Attempting to generate new consensus key"
+        
+        if ! output=$(./build/bin/geth --datadir "$NODE_DIR" account new --password "$PASSWORD_FILE" 2>&1); then
+            local error_msg="\n\Z1Failed to generate consensus key!\Zn\n\nError details:\n$output"
+            log_message "Failed to generate consensus key: $output" "error"
+            
+            dialog --colors \
+                   --title "Error" \
+                   --yesno "$error_msg\n\nWould you like to try again?" 12 70
+            
+            if [ $? -ne 0 ]; then
+                return 1
+            fi
+            continue
+        fi
+
+        # Log success
+        log_message "Successfully generated new consensus key"
+
         # Find the newest keystore file
         local keystore_file=$(find "$KEYSTORE_DIR" -type f -name "UTC--*" -printf '%T@ %p\n' | sort -n | tail -1 | cut -f2- -d" ")
         
         if [[ ! -f "$keystore_file" ]]; then
+            log_message "Keystore file not found after generation" "error"
             dialog --colors \
                    --title "Error" \
                    --yesno "\n\Z1Keystore file not found!\Zn\n\nWould you like to try again?" 8 50
@@ -805,131 +1083,37 @@ start_node_with_validator() {
     local VALIDATOR_CONFIG_DIR="$CORE_CHAIN_DIR/validator_config"
     local VALIDATOR_PASSWORD_FILE="$CORE_CHAIN_DIR/password.txt"
     local NODE_KEYSTORE_DIR="$NODE_DIR/keystore"
+    local TEMP_PASSWORD_FILE
 
-    if [[ -z "$consensus_address" ]]; then
-        show_error "Consensus address is missing."
-        return 1
-    fi
-
-    # First verify consensus key exists
-    local consensus_keystore
-    consensus_keystore=$(find "$NODE_KEYSTORE_DIR" -type f -name "UTC--*${consensus_address#0x}" 2>/dev/null)
+    # Create temporary password file with appropriate permissions
+    TEMP_PASSWORD_FILE=$(mktemp)
+    chmod 600 "$TEMP_PASSWORD_FILE"
     
-    if [[ -z "$consensus_keystore" ]]; then
-        dialog --colors \
-               --title "Consensus Key Required" \
-               --yesno "\n\Z1No consensus key found!\Zn\n\nWould you like to generate a consensus key first?" 10 60
-        
-        if [ $? -eq 0 ]; then
-            generate_consensus_key
-            return 1
-        else
-            show_error "Consensus key is required before starting as validator"
-            return 1
-        fi
-    fi
-
-    # Verify password file exists
-    if [[ ! -f "$VALIDATOR_PASSWORD_FILE" ]]; then
-        show_error "Password file not found.\nPlease generate a consensus key first."
+    # Ask for the validator password
+    local entered_password
+    entered_password=$(dialog --insecure --no-cancel \
+        --title "Validator Password" \
+        --passwordbox "\nEnter your validator password:" 10 60 3>&1 1>&2 2>&3)
+    
+    # Verify the password
+    if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
+        rm -f "$TEMP_PASSWORD_FILE"
+        show_error "Invalid validator password"
         return 1
     fi
+    
+    # Write the decrypted password to temporary file for geth
+    echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
 
-    # Check if node is already running and handle cleanup
-    if check_node_running; then
-        dialog --colors \
-               --title "Node Already Running" \
-               --yesno "\nA Core node is already running.\n\nWould you like to stop it and start a new one?" 10 60
-        
-        if [ $? -eq 0 ]; then
-            cleanup_node_process
-            sleep 2
-        else
-            show_error "Cannot start new node while another is running."
-            return 1
-        fi
+    # Start the node with the temporary password file
+    local result=0
+    if ! start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
+        result=1
     fi
-
-    # Check if port is in use
-    if check_port_in_use 35012; then
-        dialog --colors \
-               --title "Port Conflict" \
-               --yesno "\nPort 35012 is in use.\n\nWould you like to:\n\n1. Try to stop any process using this port?\n\n(This will attempt to free the port for the Core node)" 12 60
-        
-        if [ $? -eq 0 ]; then
-            cleanup_node_process "force"
-            sleep 2
-            
-            # Check again after cleanup
-            if check_port_in_use 35012; then
-                show_error "Port 35012 is still in use after cleanup.\nPlease check for other processes using this port."
-                return 1
-            fi
-        else
-            show_error "Port 35012 is required but currently in use. Please free the port and try again."
-            return 1
-        fi
-    fi
-
-    log_message "Starting Core node as validator using consensus address: $consensus_address"
-    show_progress "Starting Core node with mining enabled..."
-
-    cd "$CORE_CHAIN_DIR"
-
-    # Create logs directory if it doesn't exist
-    mkdir -p "$NODE_DIR/logs"
-
-    # Show confirmation with details
-    dialog --colors \
-           --title "Starting Validator Node" \
-           --msgbox "\nStarting node with consensus address as validator:\n\nAddress: \Z2$consensus_address\Zn\n\nMining will be enabled automatically." 12 70
-
-    # Clear existing log file to avoid confusion with old errors
-    : > "$NODE_DIR/logs/core.log"
-
-    nohup ./build/bin/geth \
-        --config "$CORE_CHAIN_DIR/testnet2/config.toml" \
-        --datadir "$NODE_DIR" \
-        --unlock "$consensus_address" \
-        --miner.etherbase "$consensus_address" \
-        --password "$VALIDATOR_PASSWORD_FILE" \
-        --mine \
-        --networkid 1114 \
-        --allow-insecure-unlock \
-        --cache 8000 \
-        --verbosity 4 \
-        2>&1 | tee -a "$NODE_DIR/logs/core.log" &
-
-    # Wait for up to 10 seconds for the node to start and check logs
-    local counter=0
-    while [ $counter -lt 10 ]; do
-        sleep 1
-        if grep -q "Failed to unlock account" "$NODE_DIR/logs/core.log" 2>/dev/null; then
-            cleanup_node_process "force"
-            show_error "Failed to unlock consensus account. Please check your password."
-            return 1
-        fi
-        if grep -q "Started mining" "$NODE_DIR/logs/core.log" 2>/dev/null; then
-            show_success "Validator node started successfully!\nMining enabled on: $consensus_address"
-            return 0
-        fi
-        if grep -q "bind: address already in use" "$NODE_DIR/logs/core.log" 2>/dev/null; then
-            cleanup_node_process "force"
-            show_error "Port 35012 is still in use. Please ensure no other Core node is running."
-            return 1
-        fi
-        counter=$((counter + 1))
-    done
-
-    # Final check
-    if check_node_running; then
-        show_success "Validator node started successfully!\nMining enabled on: $consensus_address"
-        return 0
-    else
-        cleanup_node_process "force"
-        show_error "Failed to start validator node. Check logs for details."
-        return 1
-    fi
+    
+    # Clean up
+    rm -f "$TEMP_PASSWORD_FILE"
+    return $result
 }
 
 view_consensus_key() {
@@ -985,39 +1169,205 @@ show_post_build_menu() {
     done
 }
 
+# Function to verify file MD5
+verify_snapshot_md5() {
+    local file="$1"
+    local expected_md5="12e1b6d7e76e4badba8ab40542167305"
+    
+    # Show progress dialog
+    dialog --colors \
+           --title "Verifying Snapshot" \
+           --infobox "\nCalculating MD5 checksum...\nThis may take a few minutes." 5 50
+    
+    # Calculate MD5
+    local actual_md5
+    actual_md5=$(md5sum "$file" | cut -d' ' -f1)
+    
+    # Compare MD5 hashes
+    if [ "$actual_md5" = "$expected_md5" ]; then
+        return 0
+    fi
+    return 1
+}
+
 download_snapshot_with_progress() {
-    local pid
-    local temp_file=$(mktemp)
+    local snapshot_url="https://snap.coredao.org/coredao-snapshot-testnet-20240327-pruned.tar.lz4"
+    local snapshot_file="coredao-snapshot-testnet-20240327-pruned.tar.lz4"
+    local partial_file="${snapshot_file}.partial"
+    local max_retries=5
+    local retry_count=0
+    local wait_time=5
+    local success=0
+    local cancelled=0
     
-    (
-        wget -q --show-progress https://snap.coredao.org/coredao-snapshot-testnet-20240327-pruned.tar.lz4 2>&1 | \
-        stdbuf -oL tr '\r' '\n' | grep -o '[0-9]*%' | cut -d'%' -f1 > "$temp_file" &
-        pid=$!
-        
-        while kill -0 $pid 2>/dev/null; do
-            local progress=$(tail -n 1 "$temp_file" 2>/dev/null || echo "0")
-            echo "XXX"
-            echo "$progress"
-            echo "Downloading snapshot... ($progress%)\n\nPress ESC to cancel"
-            echo "XXX"
-            sleep 1
-        done
-    ) | dialog --colors \
-               --title "Downloading Snapshot" \
-               --backtitle "Core Node Installer" \
-               --gauge "" 10 70 0 \
-               --cancel-label "Cancel" \
-               2>&1
+    cd "$CORE_CHAIN_DIR"
     
-    if [ $? -eq 1 ]; then
-        pkill -P $pid wget 2>/dev/null
-        rm -f "$temp_file"
-        show_error "Download cancelled by user"
+    # Check and install dependencies if needed
+    if ! check_snapshot_dependencies; then
         return 1
     fi
     
-    rm -f "$temp_file"
-    return 0
+    # Show initial progress dialog
+    dialog --colors \
+           --title "Preparing Download" \
+           --infobox "\nGetting snapshot information..." 5 40
+    
+    # Get total file size with retry
+    local total_size=""
+    for ((i=1; i<=3; i++)); do
+        total_size=$(curl -sI "$snapshot_url" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+        if [ -n "$total_size" ]; then
+            break
+        fi
+        sleep $((i * 2))
+    done
+    
+    if [ -z "$total_size" ]; then
+        show_error "Could not determine snapshot size.\nPlease check your internet connection."
+        return 1
+    fi
+    
+    local total_size_hr=$(numfmt --to=iec-i --suffix=B "$total_size")
+    
+    while [ $retry_count -lt $max_retries ] && [ $success -eq 0 ] && [ $cancelled -eq 0 ]; do
+        # Check for partial download
+        local resume_offset=0
+        if [ -f "$partial_file" ]; then
+            resume_offset=$(stat -c%s "$partial_file")
+            dialog --colors \
+                   --title "Resume Download" \
+                   --yesno "\nPartially downloaded file found ($resume_offset bytes).\nWould you like to resume the download?" 8 60
+            
+            if [ $? -ne 0 ]; then
+                rm -f "$partial_file"
+                resume_offset=0
+            fi
+        fi
+        
+        # Create named pipe for download control
+        local pipe="/tmp/download_pipe_$$"
+        mkfifo "$pipe"
+        
+        # Start download in background
+        (
+            if [ $resume_offset -gt 0 ]; then
+                curl -L -C $resume_offset --connect-timeout 30 --retry 3 --retry-delay 5 --max-time 7200 "$snapshot_url" 2>&1 | \
+                pv -s $((total_size - resume_offset)) >> "$partial_file" &
+            else
+                curl -L --connect-timeout 30 --retry 3 --retry-delay 5 --max-time 7200 "$snapshot_url" 2>&1 | \
+                pv -s $total_size > "$partial_file" &
+            fi
+            echo $! > "$pipe"
+        ) 2>&1 | \
+        while read -r percent; do
+            percent=${percent%%.*}
+            if [ -n "$percent" ]; then
+                # Calculate overall progress including resumed portion
+                if [ $resume_offset -gt 0 ]; then
+                    percent=$(( (resume_offset * 100 / total_size) + (percent * (total_size - resume_offset) / total_size) ))
+                fi
+                echo "XXX"
+                echo "$percent"
+                echo -e "\nDownloading Core Snapshot ($total_size_hr)...\n\nAttempt $(($retry_count + 1)) of $max_retries\n\nThis may take a while depending on your internet speed.\n\nPress ESC to cancel download."
+                echo "XXX"
+            fi
+        done | dialog --title "Downloading Snapshot" \
+                     --backtitle "Core Node Installer" \
+                     --gauge "" 12 70 0
+
+        # Get the download process ID
+        read pid < "$pipe"
+        rm -f "$pipe"
+        
+        # Check if dialog was cancelled (ESC pressed)
+        if [ $? -eq 1 ]; then
+            kill $pid 2>/dev/null
+            cancelled=1
+            dialog --colors \
+                   --title "Download Cancelled" \
+                   --yesno "\nDownload was cancelled.\n\nWould you like to try again?" 8 50
+            
+            if [ $? -eq 0 ]; then
+                cancelled=0
+                continue
+            else
+                rm -f "$partial_file"
+                return 1
+            fi
+        fi
+        
+        # Verify download completion
+        if [ -f "$partial_file" ]; then
+            local actual_size=$(stat -c%s "$partial_file")
+            
+            # Allow for small difference (1MB) in file size
+            local size_diff=$((total_size - actual_size))
+            if [ "${size_diff#-}" -lt 1048576 ]; then
+                success=1
+                mv "$partial_file" "$snapshot_file"
+                break
+            else
+                # Show detailed size mismatch
+                local actual_hr=$(numfmt --to=iec-i --suffix=B $actual_size)
+                local percent_complete=$(( actual_size * 100 / total_size ))
+                
+                # Auto-retry with notification
+                dialog --colors \
+                       --title "Download Incomplete" \
+                       --timeout 5 \
+                       --no-cancel \
+                       --infobox "\nDownload incomplete ($percent_complete% downloaded)\n\nReceived: $actual_hr\nExpected: $total_size_hr\n\nAutomatically retrying in 5 seconds...\nPress ESC to cancel." 10 60
+            fi
+        else
+            # Auto-retry with notification
+            dialog --colors \
+                   --title "Download Failed" \
+                   --timeout 5 \
+                   --no-cancel \
+                   --infobox "\nDownload failed.\n\nAutomatically retrying in 5 seconds...\nPress ESC to cancel." 8 50
+        fi
+        
+        retry_count=$((retry_count + 1))
+        wait_time=$((wait_time * 2))  # Exponential backoff
+        
+        if [ $retry_count -lt $max_retries ] && [ $success -eq 0 ] && [ $cancelled -eq 0 ]; then
+            sleep 5  # Fixed 5-second wait before retry
+        fi
+    done
+    
+    if [ $success -eq 1 ]; then
+        # Verify file integrity
+        dialog --colors \
+               --title "Verifying Download" \
+               --infobox "\nVerifying downloaded snapshot..." 5 40
+        
+        if ! verify_snapshot_md5 "$snapshot_file"; then
+            dialog --colors \
+                   --title "Verification Failed" \
+                   --yesno "\nMD5 checksum verification failed!\n\nWould you like to try downloading again?" 10 60
+            
+            if [ $? -eq 0 ]; then
+                rm -f "$snapshot_file"
+                download_snapshot_with_progress
+                return $?
+            else
+                rm -f "$snapshot_file"
+                show_error "Download verification failed"
+                return 1
+            fi
+        fi
+        
+        show_success "Snapshot downloaded and verified successfully!"
+        return 0
+    else
+        if [ $cancelled -eq 1 ]; then
+            show_error "Download cancelled by user"
+        else
+            show_error "Failed to download after $max_retries attempts.\nPlease check your internet connection and try again later."
+        fi
+        rm -f "$partial_file"
+        return 1
+    fi
 }
 
 show_node_status() {
@@ -1494,6 +1844,11 @@ download_and_prepare_snapshot() {
         fi
     fi
 
+    # Show verification success
+    dialog --colors \
+           --title "✓ Verification Success" \
+           --msgbox "\nSnapshot file verified successfully!" 7 40
+
     # Decompression
     dialog --title "Decompressing Snapshot" \
            --backtitle "Core Node Installer" \
@@ -1514,6 +1869,11 @@ download_and_prepare_snapshot() {
         rm -f "$snapshot_file" "$extracted_file"
         return 1
     fi
+
+    # Show decompression success
+    dialog --colors \
+           --title "✓ Decompression Success" \
+           --msgbox "\nSnapshot decompressed successfully!" 7 40
 
     # Extraction
     dialog --title "Extracting Snapshot" \
