@@ -16,6 +16,15 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
+# Function to check if script is being run as root
+check_root_script() {
+    if [ "$(id -u)" = "0" ]; then
+        echo "This script should NOT be run as root"
+        echo "The script will use sudo for commands that require elevated privileges"
+        exit 1
+    fi
+}
+
 # Function to create fancy headers
 show_header() {
     local title="$1"
