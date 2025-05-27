@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Prevent running entire script as root
+if [ "$(id -u)" = "0" ]; then
+   echo "This script should NOT be run as root"
+   echo "The script will use sudo for commands that require elevated privileges"
+   exit 1
+fi
+
 # Exit on error
 set -e
 

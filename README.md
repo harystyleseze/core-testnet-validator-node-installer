@@ -1,7 +1,7 @@
 # Core Node Installer: TUI for Testnet Validator Setup
 ![Homepage](./asset/homepage.png)
 
-A robust Terminal User Interface (TUI) for setting up and managing Core testnet validator nodes. This installer provides an intuitive, dialog-based interface that simplifies the entire process from initial setup to ongoing maintenance.
+A robust Terminal User Interface (TUI) for setting up and managing Core testnet validator nodes. This installer provides an intuitive, dialog-based interface that simplifies the entire process from initial setup to ongoing maintenance. This script should not be run as root. Checkout the [root user check doc](./root-user-check.md)
 
 ![Menu](./asset/mainmenu.png)
 
