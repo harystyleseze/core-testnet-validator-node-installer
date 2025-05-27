@@ -1099,7 +1099,7 @@ start_node_with_validator() {
     if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
         rm -f "$TEMP_PASSWORD_FILE"
         show_error "Invalid validator password"
-        return 1
+            return 1
     fi
     
     # Write the decrypted password to temporary file for geth
@@ -1266,21 +1266,21 @@ download_snapshot_with_progress() {
                 if [ $resume_offset -gt 0 ]; then
                     percent=$(( (resume_offset * 100 / total_size) + (percent * (total_size - resume_offset) / total_size) ))
                 fi
-                echo "XXX"
+            echo "XXX"
                 echo "$percent"
                 echo -e "\nDownloading Core Snapshot ($total_size_hr)...\n\nAttempt $(($retry_count + 1)) of $max_retries\n\nThis may take a while depending on your internet speed.\n\nPress ESC to cancel download."
-                echo "XXX"
+            echo "XXX"
             fi
         done | dialog --title "Downloading Snapshot" \
-                     --backtitle "Core Node Installer" \
+               --backtitle "Core Node Installer" \
                      --gauge "" 12 70 0
-
+    
         # Get the download process ID
         read pid < "$pipe"
         rm -f "$pipe"
         
         # Check if dialog was cancelled (ESC pressed)
-        if [ $? -eq 1 ]; then
+    if [ $? -eq 1 ]; then
             kill $pid 2>/dev/null
             cancelled=1
             dialog --colors \
@@ -1292,7 +1292,7 @@ download_snapshot_with_progress() {
                 continue
             else
                 rm -f "$partial_file"
-                return 1
+        return 1
             fi
         fi
         
@@ -1358,7 +1358,7 @@ download_snapshot_with_progress() {
         fi
         
         show_success "Snapshot downloaded and verified successfully!"
-        return 0
+    return 0
     else
         if [ $cancelled -eq 1 ]; then
             show_error "Download cancelled by user"
