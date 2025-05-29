@@ -1085,6 +1085,20 @@ cleanup_node_process() {
     fi
 }
 
+# Function to verify account can be unlocked with password
+verify_account_unlock() {
+    local address="$1"
+    local password_file="$2"
+    
+    cd "$CORE_CHAIN_DIR"
+    
+    # Try to unlock account without starting the node
+    if ! ./build/bin/geth --datadir "$NODE_DIR" account unlock "$address" --password "$password_file" --unlock "$address" &>/dev/null; then
+        return 1
+    fi
+    return 0
+}
+
 # Function to start node with password for validator
 start_node_with_password() {
     local consensus_address="$1"
@@ -1096,6 +1110,13 @@ start_node_with_password() {
     # Check if node is already running
     if check_node_running; then
         show_error "Node is already running!"
+        return 1
+    fi
+
+    # Verify account can be unlocked before starting node
+    show_progress "Verifying validator account access..."
+    if ! verify_account_unlock "$consensus_address" "$password_file"; then
+        show_error "Failed to unlock validator account.\nPlease check your password and try again."
         return 1
     fi
 
@@ -1118,20 +1139,38 @@ start_node_with_password() {
         --verbosity 4 \
         2>&1 | tee -a "$NODE_DIR/logs/core.log" &
 
-    # Wait for up to 10 seconds for the node to start
+    # Wait for up to 30 seconds for the node to start and check for errors
     local counter=0
-    while [ $counter -lt 10 ]; do
+    while [ $counter -lt 30 ]; do
         sleep 1
-        if grep -q "Started P2P networking" "$NODE_DIR/logs/core.log" 2>/dev/null; then
-            show_success "Node started successfully in validator mode!"
-            return 0
+        
+        # Check for specific error patterns in the log
+        if grep -q "Failed to unlock account.*could not decrypt key with given password" "$NODE_DIR/logs/core.log" 2>/dev/null; then
+            stop_node
+            show_error "Failed to unlock validator account.\nPlease check your password and try again."
+            return 1
         fi
+        
+        if grep -q "Started P2P networking" "$NODE_DIR/logs/core.log" 2>/dev/null; then
+            if grep -q "Unlocked account" "$NODE_DIR/logs/core.log" 2>/dev/null; then
+                show_success "Node started successfully in validator mode!"
+                return 0
+            fi
+        fi
+        
         counter=$((counter + 1))
     done
 
+    # Final check if node is running
     if check_node_running; then
-        show_success "Node started successfully in validator mode!"
-        return 0
+        if grep -q "Unlocked account" "$NODE_DIR/logs/core.log" 2>/dev/null; then
+            show_success "Node started successfully in validator mode!"
+            return 0
+        else
+            stop_node
+            show_error "Node started but failed to unlock validator account.\nPlease check your password and try again."
+            return 1
+        fi
     else
         show_error "Failed to start node. Check logs for details."
         return 1
@@ -1173,7 +1212,7 @@ start_node_with_validator() {
     
     # Clean up
     rm -f "$TEMP_PASSWORD_FILE"
-    return $result
+    return 1
 }
 
 view_consensus_key() {
