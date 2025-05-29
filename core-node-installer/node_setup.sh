@@ -1192,87 +1192,37 @@ start_node_with_validator() {
     local VALIDATOR_CONFIG_DIR="$CORE_CHAIN_DIR/validator_config"
     local VALIDATOR_PASSWORD_FILE="$CORE_CHAIN_DIR/password.txt"
     local NODE_KEYSTORE_DIR="$NODE_DIR/keystore"
-    local MAX_ATTEMPTS=3
-    local attempt=1
+    local TEMP_PASSWORD_FILE
+
+    # Create temporary password file with appropriate permissions
+    TEMP_PASSWORD_FILE=$(mktemp)
+    chmod 600 "$TEMP_PASSWORD_FILE"
     
-    while [ $attempt -le $MAX_ATTEMPTS ]; do
-        # Ask for the validator password
-        local entered_password
-        entered_password=$(dialog --colors \
-            --title "Validator Password (Attempt $attempt of $MAX_ATTEMPTS)" \
-            --insecure \
-            --passwordbox "\nEnter your validator password:" 10 60 3>&1 1>&2 2>&3)
-        
-        # Check if dialog was cancelled
-        if [ $? -ne 0 ]; then
+    # Ask for the validator password
+    local entered_password
+    entered_password=$(dialog --insecure --no-cancel \
+        --title "Validator Password" \
+        --passwordbox "\nEnter your validator password:" 10 60 3>&1 1>&2 2>&3)
+    
+    # Verify the password
+    if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
+        rm -f "$TEMP_PASSWORD_FILE"
+        show_error "Invalid validator password"
             return 1
-        fi
-        
-        # Verify the password by trying to decrypt stored hash
-        if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
-            if [ $attempt -lt $MAX_ATTEMPTS ]; then
-                dialog --colors \
-                    --title "Invalid Password" \
-                    --yesno "\n\Z1Invalid password!\Zn\n\nWould you like to try again?\n\nAttempts remaining: $(($MAX_ATTEMPTS - $attempt))" 10 60
-                
-                if [ $? -ne 0 ]; then
-                    return 1
-                fi
-            else
-                show_error "Maximum password attempts exceeded.\nPlease verify your password and try again later."
-                return 1
-            fi
-            attempt=$((attempt + 1))
-            continue
-        fi
-        
-        # Verify account can be unlocked with this password
-        if ! verify_account_unlock "$consensus_address" "$entered_password"; then
-            if [ $attempt -lt $MAX_ATTEMPTS ]; then
-                dialog --colors \
-                    --title "Account Unlock Failed" \
-                    --yesno "\n\Z1Failed to unlock validator account!\Zn\n\nWould you like to try again?\n\nAttempts remaining: $(($MAX_ATTEMPTS - $attempt))" 10 60
-                
-                if [ $? -ne 0 ]; then
-                    return 1
-                fi
-            else
-                show_error "Maximum attempts exceeded.\nPlease verify your validator configuration and try again later."
-                return 1
-            fi
-            attempt=$((attempt + 1))
-            continue
-        fi
-        
-        # Create temporary password file for geth
-        local TEMP_PASSWORD_FILE
-        TEMP_PASSWORD_FILE=$(mktemp)
-        chmod 600 "$TEMP_PASSWORD_FILE"
-        echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
-        
-        # Try to start the node
-        if start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
-            rm -f "$TEMP_PASSWORD_FILE"
-            return 0
-        else
-            rm -f "$TEMP_PASSWORD_FILE"
-            if [ $attempt -lt $MAX_ATTEMPTS ]; then
-                dialog --colors \
-                    --title "Validator Start Failed" \
-                    --yesno "\n\Z1Failed to start validator!\Zn\n\nWould you like to try again with a different password?\n\nAttempts remaining: $(($MAX_ATTEMPTS - $attempt))" 12 60
-                
-                if [ $? -ne 0 ]; then
-                    return 1
-                fi
-            else
-                show_error "Maximum attempts exceeded.\nPlease verify your validator configuration and try again later."
-                return 1
-            fi
-        fi
-        attempt=$((attempt + 1))
-    done
+    fi
     
-    return 1
+    # Write the decrypted password to temporary file for geth
+    echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
+
+    # Start the node with the temporary password file
+    local result=0
+    if ! start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
+        result=1
+    fi
+    
+    # Clean up
+    rm -f "$TEMP_PASSWORD_FILE"
+    return $result
 }
 
 view_consensus_key() {
@@ -1425,21 +1375,21 @@ download_snapshot_with_progress() {
                 if [ $resume_offset -gt 0 ]; then
                     percent=$(( (resume_offset * 100 / total_size) + (percent * (total_size - resume_offset) / total_size) ))
                 fi
-                echo "XXX"
+            echo "XXX"
                 echo "$percent"
                 echo -e "\nDownloading Core Snapshot ($total_size_hr)...\n\nAttempt $(($retry_count + 1)) of $max_retries\n\nThis may take a while depending on your internet speed.\n\nPress ESC to cancel download."
-                echo "XXX"
+            echo "XXX"
             fi
         done | dialog --title "Downloading Snapshot" \
-                     --backtitle "Core Node Installer" \
+               --backtitle "Core Node Installer" \
                      --gauge "" 12 70 0
-
+    
         # Get the download process ID
         read pid < "$pipe"
         rm -f "$pipe"
         
         # Check if dialog was cancelled (ESC pressed)
-        if [ $? -eq 1 ]; then
+    if [ $? -eq 1 ]; then
             kill $pid 2>/dev/null
             cancelled=1
             dialog --colors \
@@ -1451,7 +1401,7 @@ download_snapshot_with_progress() {
                 continue
             else
                 rm -f "$partial_file"
-                return 1
+        return 1
             fi
         fi
         
@@ -1517,7 +1467,7 @@ download_snapshot_with_progress() {
         fi
         
         show_success "Snapshot downloaded and verified successfully!"
-        return 0
+    return 0
     else
         if [ $cancelled -eq 1 ]; then
             show_error "Download cancelled by user"
