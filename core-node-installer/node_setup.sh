@@ -1088,15 +1088,25 @@ cleanup_node_process() {
 # Function to verify account can be unlocked with password
 verify_account_unlock() {
     local address="$1"
-    local password_file="$2"
+    local password="$2"
+    local temp_pass_file
+    
+    # Create temporary password file
+    temp_pass_file=$(mktemp)
+    chmod 600 "$temp_pass_file"
+    echo -n "$password" > "$temp_pass_file"
     
     cd "$CORE_CHAIN_DIR"
     
     # Try to unlock account without starting the node
-    if ! ./build/bin/geth --datadir "$NODE_DIR" account unlock "$address" --password "$password_file" --unlock "$address" &>/dev/null; then
-        return 1
+    local result=0
+    if ! ./build/bin/geth --datadir "$NODE_DIR" account list --unlock "$address" --password "$temp_pass_file" &>/dev/null; then
+        result=1
     fi
-    return 0
+    
+    # Clean up temp file
+    rm -f "$temp_pass_file"
+    return $result
 }
 
 # Function to start node with password for validator
@@ -1182,36 +1192,86 @@ start_node_with_validator() {
     local VALIDATOR_CONFIG_DIR="$CORE_CHAIN_DIR/validator_config"
     local VALIDATOR_PASSWORD_FILE="$CORE_CHAIN_DIR/password.txt"
     local NODE_KEYSTORE_DIR="$NODE_DIR/keystore"
-    local TEMP_PASSWORD_FILE
-
-    # Create temporary password file with appropriate permissions
-    TEMP_PASSWORD_FILE=$(mktemp)
-    chmod 600 "$TEMP_PASSWORD_FILE"
+    local MAX_ATTEMPTS=3
+    local attempt=1
     
-    # Ask for the validator password
-    local entered_password
-    entered_password=$(dialog --insecure --no-cancel \
-        --title "Validator Password" \
-        --passwordbox "\nEnter your validator password:" 10 60 3>&1 1>&2 2>&3)
+    while [ $attempt -le $MAX_ATTEMPTS ]; do
+        # Ask for the validator password
+        local entered_password
+        entered_password=$(dialog --colors \
+            --title "Validator Password (Attempt $attempt of $MAX_ATTEMPTS)" \
+            --insecure \
+            --passwordbox "\nEnter your validator password:" 10 60 3>&1 1>&2 2>&3)
+        
+        # Check if dialog was cancelled
+        if [ $? -ne 0 ]; then
+            return 1
+        fi
+        
+        # Verify the password by trying to decrypt stored hash
+        if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
+            if [ $attempt -lt $MAX_ATTEMPTS ]; then
+                dialog --colors \
+                    --title "Invalid Password" \
+                    --yesno "\n\Z1Invalid password!\Zn\n\nWould you like to try again?\n\nAttempts remaining: $(($MAX_ATTEMPTS - $attempt))" 10 60
+                
+                if [ $? -ne 0 ]; then
+                    return 1
+                fi
+            else
+                show_error "Maximum password attempts exceeded.\nPlease verify your password and try again later."
+                return 1
+            fi
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Verify account can be unlocked with this password
+        if ! verify_account_unlock "$consensus_address" "$entered_password"; then
+            if [ $attempt -lt $MAX_ATTEMPTS ]; then
+                dialog --colors \
+                    --title "Account Unlock Failed" \
+                    --yesno "\n\Z1Failed to unlock validator account!\Zn\n\nWould you like to try again?\n\nAttempts remaining: $(($MAX_ATTEMPTS - $attempt))" 10 60
+                
+                if [ $? -ne 0 ]; then
+                    return 1
+                fi
+            else
+                show_error "Maximum attempts exceeded.\nPlease verify your validator configuration and try again later."
+                return 1
+            fi
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Create temporary password file for geth
+        local TEMP_PASSWORD_FILE
+        TEMP_PASSWORD_FILE=$(mktemp)
+        chmod 600 "$TEMP_PASSWORD_FILE"
+        echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
+        
+        # Try to start the node
+        if start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
+            rm -f "$TEMP_PASSWORD_FILE"
+            return 0
+        else
+            rm -f "$TEMP_PASSWORD_FILE"
+            if [ $attempt -lt $MAX_ATTEMPTS ]; then
+                dialog --colors \
+                    --title "Validator Start Failed" \
+                    --yesno "\n\Z1Failed to start validator!\Zn\n\nWould you like to try again with a different password?\n\nAttempts remaining: $(($MAX_ATTEMPTS - $attempt))" 12 60
+                
+                if [ $? -ne 0 ]; then
+                    return 1
+                fi
+            else
+                show_error "Maximum attempts exceeded.\nPlease verify your validator configuration and try again later."
+                return 1
+            fi
+        fi
+        attempt=$((attempt + 1))
+    done
     
-    # Verify the password
-    if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
-        rm -f "$TEMP_PASSWORD_FILE"
-        show_error "Invalid validator password"
-        return 1
-    fi
-    
-    # Write the decrypted password to temporary file for geth
-    echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
-
-    # Start the node with the temporary password file
-    local result=0
-    if ! start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
-        result=1
-    fi
-    
-    # Clean up
-    rm -f "$TEMP_PASSWORD_FILE"
     return 1
 }
 
