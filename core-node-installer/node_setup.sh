@@ -1085,6 +1085,59 @@ cleanup_node_process() {
     fi
 }
 
+# Function to start node with password for validator
+start_node_with_password() {
+    local consensus_address="$1"
+    local password_file="$2"
+    
+    log_message "Starting Core node as validator"
+    show_progress "Starting Core node as validator..."
+    
+    # Check if node is already running
+    if check_node_running; then
+        show_error "Node is already running!"
+        return 1
+    fi
+
+    # Create logs directory if it doesn't exist
+    mkdir -p "$NODE_DIR/logs"
+    
+    cd "$CORE_CHAIN_DIR"
+    
+    # Start the node with validator configuration
+    nohup ./build/bin/geth \
+        --config "$CORE_CHAIN_DIR/testnet2/config.toml" \
+        --datadir "$NODE_DIR" \
+        --networkid 1114 \
+        --cache 8000 \
+        --rpc.allow-unprotected-txs \
+        --mine \
+        --unlock "$consensus_address" \
+        --password "$password_file" \
+        --allow-insecure-unlock \
+        --verbosity 4 \
+        2>&1 | tee -a "$NODE_DIR/logs/core.log" &
+
+    # Wait for up to 10 seconds for the node to start
+    local counter=0
+    while [ $counter -lt 10 ]; do
+        sleep 1
+        if grep -q "Started P2P networking" "$NODE_DIR/logs/core.log" 2>/dev/null; then
+            show_success "Node started successfully in validator mode!"
+            return 0
+        fi
+        counter=$((counter + 1))
+    done
+
+    if check_node_running; then
+        show_success "Node started successfully in validator mode!"
+        return 0
+    else
+        show_error "Failed to start node. Check logs for details."
+        return 1
+    fi
+}
+
 start_node_with_validator() {
     local consensus_address="$1"
     local VALIDATOR_CONFIG_DIR="$CORE_CHAIN_DIR/validator_config"
