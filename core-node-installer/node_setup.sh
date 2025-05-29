@@ -855,13 +855,83 @@ write_password_securely() {
 read_encrypted_password() {
     local password_file="$1"
     local entered_password="$2"
+    local cleanup_files=()
+    
+    # Function to clean up temporary files
+    cleanup() {
+        for file in "${cleanup_files[@]}"; do
+            if [[ -f "$file" ]]; then
+                rm -f "$file"
+            fi
+        done
+    }
+    
+    # Set up trap for cleanup on exit
+    trap cleanup EXIT
+    
+    # Verify inputs
+    if [[ ! -f "$password_file" ]]; then
+        log_message "Password file not found: $password_file" "error"
+        return 1
+    fi
+    
+    if [[ -z "$entered_password" ]]; then
+        log_message "No password provided" "error"
+        return 1
+    fi
     
     # Read the encrypted password from file
     local stored_hash
-    stored_hash=$(cat "$password_file")
+    if ! stored_hash=$(cat "$password_file"); then
+        log_message "Failed to read password file" "error"
+        return 1
+    fi
+    
+    if [[ -z "$stored_hash" ]]; then
+        log_message "Password file is empty" "error"
+        return 1
+    fi
+    
+    # Create temporary Python script for verification
+    local temp_script
+    temp_script=$(mktemp)
+    if [ $? -ne 0 ]; then
+        log_message "Failed to create temporary script file" "error"
+        return 1
+    fi
+    chmod 700 "$temp_script"
+    cleanup_files+=("$temp_script")
+    
+    # Write verification script
+    cat > "$temp_script" << 'EOF'
+import bcrypt
+import base64
+import sys
+
+try:
+    password = sys.argv[1].encode('utf-8')
+    stored_hash = base64.b64decode(sys.argv[2])
+    
+    # Verify the stored hash is a valid bcrypt hash
+    if not stored_hash.startswith(b'$2'):
+        print("Invalid bcrypt hash format", file=sys.stderr)
+        sys.exit(1)
+        
+    if bcrypt.checkpw(password, stored_hash):
+        sys.exit(0)
+    sys.exit(1)
+except base64.binascii.Error as e:
+    print(f"Invalid base64 encoding: {e}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
+EOF
     
     # Verify the password
-    if ! verify_password "$entered_password" "$stored_hash"; then
+    local output
+    if ! output=$(python3 "$temp_script" "$entered_password" "$stored_hash" 2>&1); then
+        log_message "Password verification failed: $output" "error"
         return 1
     fi
     
@@ -1189,40 +1259,150 @@ start_node_with_password() {
 
 start_node_with_validator() {
     local consensus_address="$1"
-    local VALIDATOR_CONFIG_DIR="$CORE_CHAIN_DIR/validator_config"
     local VALIDATOR_PASSWORD_FILE="$CORE_CHAIN_DIR/password.txt"
-    local NODE_KEYSTORE_DIR="$NODE_DIR/keystore"
-    local TEMP_PASSWORD_FILE
-
-    # Create temporary password file with appropriate permissions
-    TEMP_PASSWORD_FILE=$(mktemp)
-    chmod 600 "$TEMP_PASSWORD_FILE"
+    local TEMP_PASSWORD_FILE=""
+    local entered_password=""
+    local cleanup_files=()
     
-    # Ask for the validator password
-    local entered_password
-    entered_password=$(dialog --insecure --no-cancel \
-        --title "Validator Password" \
-        --passwordbox "\nEnter your validator password:" 10 60 3>&1 1>&2 2>&3)
+    # Function to clean up temporary files
+    cleanup() {
+        for file in "${cleanup_files[@]}"; do
+            if [[ -f "$file" ]]; then
+                rm -f "$file"
+            fi
+        done
+    }
     
-    # Verify the password
-    if ! read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
-        rm -f "$TEMP_PASSWORD_FILE"
-        show_error "Invalid validator password"
-            return 1
+    # Set up trap for cleanup on exit
+    trap cleanup EXIT
+    
+    # Verify validator address exists
+    if [[ -z "$consensus_address" ]]; then
+        show_error "No validator address provided"
+        return 1
     fi
     
-    # Write the decrypted password to temporary file for geth
+    # Verify password file exists
+    if [[ ! -f "$VALIDATOR_PASSWORD_FILE" ]]; then
+        show_error "Password file not found at $VALIDATOR_PASSWORD_FILE"
+        return 1
+    fi
+    
+    # Create temporary password file with appropriate permissions
+    TEMP_PASSWORD_FILE=$(mktemp)
+    if [ $? -ne 0 ]; then
+        show_error "Failed to create temporary password file"
+        return 1
+    fi
+    chmod 600 "$TEMP_PASSWORD_FILE"
+    cleanup_files+=("$TEMP_PASSWORD_FILE")
+    
+    # Ask for the validator password with retry logic
+    local max_retries=3
+    local retry_count=0
+    local password_verified=false
+    
+    while [ $retry_count -lt $max_retries ] && [ "$password_verified" = false ]; do
+        entered_password=$(dialog --insecure --no-cancel \
+            --title "Validator Password" \
+            --passwordbox "\nEnter your validator password (attempt $((retry_count + 1))/$max_retries):" 10 60 3>&1 1>&2 2>&3)
+        
+        # Check if dialog was cancelled
+        if [ $? -ne 0 ]; then
+            cleanup
+            return 1
+        fi
+        
+        # Verify the password using bcrypt
+        if read_encrypted_password "$VALIDATOR_PASSWORD_FILE" "$entered_password"; then
+            password_verified=true
+        else
+            ((retry_count++))
+            if [ $retry_count -lt $max_retries ]; then
+                dialog --colors \
+                       --title "Invalid Password" \
+                       --yesno "\n\Z1Invalid password!\Zn\n\nWould you like to try again?" 8 50
+                if [ $? -ne 0 ]; then
+                    cleanup
+                    return 1
+                fi
+            fi
+        fi
+    done
+    
+    if [ "$password_verified" = false ]; then
+        show_error "Maximum password attempts exceeded"
+        cleanup
+        return 1
+    fi
+    
+    # Write the raw password to temporary file for geth
     echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
-
+    
+    # Verify we can unlock the account before starting the node
+    show_progress "Verifying validator account access..."
+    if ! verify_account_unlock "$consensus_address" "$entered_password"; then
+        show_error "Failed to unlock validator account.\nPlease check your password and try again."
+        cleanup
+        return 1
+    fi
+    
     # Start the node with the temporary password file
     local result=0
     if ! start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
         result=1
     fi
     
-    # Clean up
-    rm -f "$TEMP_PASSWORD_FILE"
+    # Cleanup is handled by the trap
     return $result
+}
+
+# Function to verify account unlock
+verify_account_unlock() {
+    local address="$1"
+    local password="$2"
+    local temp_pass_file=""
+    local cleanup_files=()
+    
+    # Function to clean up temporary files
+    cleanup() {
+        for file in "${cleanup_files[@]}"; do
+            if [[ -f "$file" ]]; then
+                rm -f "$file"
+            fi
+        done
+    }
+    
+    # Set up trap for cleanup on exit
+    trap cleanup EXIT
+    
+    # Create temporary password file
+    temp_pass_file=$(mktemp)
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    chmod 600 "$temp_pass_file"
+    cleanup_files+=("$temp_pass_file")
+    
+    # Write password to temp file
+    echo -n "$password" > "$temp_pass_file"
+    
+    cd "$CORE_CHAIN_DIR"
+    
+    # Try to unlock account without starting the node
+    local output
+    if ! output=$(./build/bin/geth --datadir "$NODE_DIR" account list --unlock "$address" --password "$temp_pass_file" 2>&1); then
+        log_message "Account unlock verification failed: $output" "error"
+        return 1
+    fi
+    
+    # Verify the account was actually listed
+    if ! echo "$output" | grep -q "$address"; then
+        log_message "Account $address not found in unlocked accounts" "error"
+        return 1
+    fi
+    
+    return 0
 }
 
 view_consensus_key() {
