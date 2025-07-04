@@ -1082,6 +1082,9 @@ start_node_with_password() {
     local consensus_address="$1"
     local password_file="$2"
     
+    # Debug: Print received parameters
+    echo "DEBUG: start_node_with_password received address = '$consensus_address'" >> /tmp/debug_validator.log
+    
     log_message "Starting Core node as validator with address: $consensus_address"
     show_progress "Starting Core node as validator..."
     
@@ -1118,7 +1121,7 @@ start_node_with_password() {
     # Show log file location
     local log_file="$NODE_DIR/logs/core.log"
     
-    show_success "Validator node started successfully!\n\nValidator Address:\n$consensus_address\n\nTo view logs, run:\ntail -f $log_file"
+    show_success "Validator node started successfully!\n\nValidator Address:\n$consensus_address\n\nTo view logs, hit enter and select view logs"
     
     # Ask if user wants to view logs
     dialog --colors \
@@ -1178,10 +1181,9 @@ start_node_with_validator() {
     
     # Write the decrypted password to temporary file for geth
     echo -n "$entered_password" > "$TEMP_PASSWORD_FILE"
-
+    
     # Start the node with the temporary password file
     local result=0
-    log_message "About to call start_node_with_password with: '$consensus_address'"
     if ! start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
         result=1
     fi
@@ -1505,7 +1507,7 @@ show_node_management() {
 
         local validator_address=""
         if [[ -f "$CORE_CHAIN_DIR/validator_address.txt" ]]; then
-            validator_address=$(cat "$CORE_CHAIN_DIR/validator_address.txt")
+            validator_address=$(cat "$CORE_CHAIN_DIR/validator_address.txt" | tr -d '\n\r' | xargs)
         fi
         
         # Get current node details for the menu title

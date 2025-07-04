@@ -42,7 +42,7 @@ show_success() {
     dialog --colors \
            --title "\Z2✓ Success\Zn" \
            --backtitle "Core Node Installer" \
-           --msgbox "\n\Z2✓ Success:\Zn\n\n\Z0$1" 10 60
+           --msgbox "\n\Z2✓ Success:\Zn\n\n\Z0$1" 15 80
 }
 
 # Display warning message with new styling
