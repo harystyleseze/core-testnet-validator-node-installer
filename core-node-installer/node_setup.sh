@@ -553,7 +553,6 @@ start_node() {
     nohup ./build/bin/geth --config "$CORE_CHAIN_DIR/testnet2/config.toml" \
                           --datadir "$NODE_DIR" \
                           --cache 8000 \
-                          --rpc.allow-unprotected-txs \
                           --networkid 1114 \
                           --verbosity 4 \
                           2>&1 | tee -a "$NODE_DIR/logs/core.log" &
@@ -1078,12 +1077,87 @@ cleanup_node_process() {
     fi
 }
 
+# Function to start node with validator password
+start_node_with_password() {
+    local consensus_address="$1"
+    local password_file="$2"
+    
+    log_message "Starting Core node as validator with address: $consensus_address"
+    show_progress "Starting Core node as validator..."
+    
+    # Check if node is already running
+    if pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Node is already running!"
+        return 1
+    fi
+
+    # Create logs directory if it doesn't exist
+    mkdir -p "$NODE_DIR/logs"
+
+    # Start the node as validator in the background
+    cd "$CORE_CHAIN_DIR"
+    nohup ./build/bin/geth --config "$CORE_CHAIN_DIR/testnet2/config.toml" \
+                          --datadir "$NODE_DIR" \
+                          --cache 8000 \
+                          --networkid 1114 \
+                          --mine \
+                          --miner.etherbase "$consensus_address" \
+                          --password "$password_file" \
+                          --verbosity 4 \
+                          2>&1 | tee -a "$NODE_DIR/logs/core.log" &
+
+    # Wait a moment for the process to start
+    sleep 5
+    
+    # Check if the process is running
+    if ! pgrep -f "geth.*--networkid 1114" > /dev/null; then
+        show_error "Failed to start validator node"
+        return 1
+    fi
+
+    # Show log file location
+    local log_file="$NODE_DIR/logs/core.log"
+    
+    show_success "Validator node started successfully!\n\nValidator Address:\n$consensus_address\n\nTo view logs, run:\ntail -f $log_file"
+    
+    # Ask if user wants to view logs
+    dialog --colors \
+           --title "View Logs" \
+           --yesno "\nWould you like to view the validator node logs now?" 7 50
+    
+    if [ $? -eq 0 ]; then
+        # Save current directory
+        local current_dir=$(pwd)
+        
+        # Change to script directory to source log monitor
+        cd "$SCRIPT_DIR"
+        source "./log_monitor.sh"
+        
+        # Show live logs with navigation
+        show_live_logs "$log_file" "Validator Node Logs" 50
+        local ret=$?
+        
+        # Handle navigation based on return code
+        if [ $ret -eq 3 ]; then  # Main Menu selected
+            cd "$current_dir"
+            return 0
+        fi
+        
+        # Return to original directory
+        cd "$current_dir"
+    fi
+    
+    return 0
+}
+
 start_node_with_validator() {
     local consensus_address="$1"
     local VALIDATOR_CONFIG_DIR="$CORE_CHAIN_DIR/validator_config"
     local VALIDATOR_PASSWORD_FILE="$CORE_CHAIN_DIR/password.txt"
     local NODE_KEYSTORE_DIR="$NODE_DIR/keystore"
     local TEMP_PASSWORD_FILE
+    
+    log_message "start_node_with_validator called with address: $consensus_address"
 
     # Create temporary password file with appropriate permissions
     TEMP_PASSWORD_FILE=$(mktemp)
@@ -1107,6 +1181,7 @@ start_node_with_validator() {
 
     # Start the node with the temporary password file
     local result=0
+    log_message "About to call start_node_with_password with: '$consensus_address'"
     if ! start_node_with_password "$consensus_address" "$TEMP_PASSWORD_FILE"; then
         result=1
     fi
