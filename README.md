@@ -207,7 +207,3 @@ This project is licensed under the MIT License.
 ## Support
 
 For issues and feature requests, please use the GitHub issue tracker.
-
----
-
-Thank you for using Core Node Installer. We strive to make validator node setup and management as simple and reliable as possible!
