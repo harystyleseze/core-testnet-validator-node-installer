@@ -532,7 +532,6 @@ mkdir -p ./node/logs
 ./build/bin/geth --config "$CORE_CHAIN_DIR/testnet2/config.toml" \
                  --datadir "$NODE_DIR" \
                  --cache 8000 \
-                 --rpc.allow-unprotected-txs \
                  --networkid 1114 \
                  --verbosity 4 \
                  2>&1 | tee "$NODE_DIR/logs/core.log"
